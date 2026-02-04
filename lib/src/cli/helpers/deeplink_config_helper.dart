@@ -1,0 +1,28 @@
+class DeeplinkConfigHelper {
+  static String getDeeplinkConfigTemplate() {
+    return r'''Map<String, dynamic> get deeplinkConfig => {
+  'deeplink': {
+    'enabled': true,
+    'driver': 'app_links',
+    'domain': 'example.com',
+    'scheme': 'https',
+
+    'ios': {
+      'team_id': 'YOUR_TEAM_ID',
+      'bundle_id': 'com.example.app',
+    },
+
+    'android': {
+      'package_name': 'com.example.app',
+      'sha256_fingerprints': [
+        'YOUR_SHA256_FINGERPRINT',
+      ],
+    },
+
+    'paths': [
+      '/*',
+    ],
+  },
+};''';
+  }
+}

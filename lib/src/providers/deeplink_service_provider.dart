@@ -27,8 +27,10 @@ class DeeplinkServiceProvider extends ServiceProvider {
         manager.handleUri(uri);
       });
 
-      // Handle initial link
-      manager.getInitialLink().then((uri) {
+      // Handle initial link - delay to ensure router is ready
+      // Router is initialized after runApp() completes, so we wait for the first frame
+      Future.delayed(Duration.zero, () async {
+        final uri = await manager.getInitialLink();
         if (uri != null) {
           manager.handleUri(uri);
         }

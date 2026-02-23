@@ -1,4 +1,4 @@
-import 'package:fluttersdk_magic/fluttersdk_magic.dart';
+import 'package:magic/magic.dart';
 import '../deeplink_manager.dart';
 import '../drivers/app_links_driver.dart';
 import '../handlers/onesignal_deeplink_handler.dart';

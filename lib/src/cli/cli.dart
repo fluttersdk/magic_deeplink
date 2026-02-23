@@ -1,3 +1,3 @@
 library;
 
-export 'package:fluttersdk_magic_cli/fluttersdk_magic_cli.dart';
+export 'package:magic_cli/magic_cli.dart';

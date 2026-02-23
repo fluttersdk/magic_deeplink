@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:args/command_runner.dart';
-import 'package:fluttersdk_magic_cli/fluttersdk_magic_cli.dart' hide Command;
+import 'package:magic_cli/magic_cli.dart' hide Command;
 
 class GenerateCommand extends Command {
   @override

@@ -1,5 +1,5 @@
-import 'package:fluttersdk_magic/fluttersdk_magic.dart';
-import 'package:fluttersdk_magic_deeplink/src/handlers/deeplink_handler.dart';
+import 'package:magic/magic.dart';
+import 'package:magic_deeplink/src/handlers/deeplink_handler.dart';
 
 class RouteDeeplinkHandler extends DeeplinkHandler {
   final List<String> paths;

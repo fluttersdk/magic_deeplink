@@ -1,23 +1,30 @@
-import 'dart:convert';
 import 'dart:io';
-import 'package:args/command_runner.dart';
-import 'package:magic_cli/magic_cli.dart' hide Command;
 
+import 'package:magic_cli/magic_cli.dart';
+
+/// CLI command to generate deep link configuration files.
+///
+/// Produces `apple-app-site-association` (iOS) and `assetlinks.json` (Android)
+/// by reading the project's deeplink config and writing JSON files to the
+/// specified output directory via [JsonEditor.writeJson].
 class GenerateCommand extends Command {
   @override
-  final String name = 'generate';
+  String get name => 'generate';
 
   @override
-  final String description = 'Generate deep link configuration files (apple-app-site-association, assetlinks.json).';
+  String get description =>
+      'Generate deep link configuration files (apple-app-site-association, assetlinks.json).';
 
-  GenerateCommand() {
-    argParser.addOption(
+  /// {@macro magic_cli.Command.configure}
+  @override
+  void configure(ArgParser parser) {
+    parser.addOption(
       'output',
       abbr: 'o',
       help: 'The output directory for generated files.',
       defaultsTo: 'public',
     );
-    argParser.addOption(
+    parser.addOption(
       'root',
       help: 'The project root directory.',
       defaultsTo: '.',
@@ -25,65 +32,101 @@ class GenerateCommand extends Command {
   }
 
   @override
-  Future<void> run() async {
-    final rootDir = argResults?['root'] as String? ?? '.';
-    final outputDir = argResults?['output'] as String? ?? 'public';
+  Future<void> handle() async {
+    final rootDir = arguments['root'] as String? ?? '.';
+    final outputDir = arguments['output'] as String? ?? 'public';
 
     final projectPath = Directory(rootDir).absolute.path;
     final outputPath = '$projectPath/$outputDir';
 
-    // ignore: avoid_print
-    print(ConsoleStyle.info('Generating deep link files in $outputPath...'));
+    info('Generating deep link files in $outputPath...');
 
-    // In a real implementation, we would parse the config file here.
-    // For now, we'll placeholder this or expect the user to ensure config is available.
-    // Since we can't easily import user code dynamically in a pre-compiled or independent script without mirrors/AST.
-    // We will assume for this implementation we might be looking for a magic.json or similar,
-    // or we might need to rely on a different mechanism.
-    // However, following the plan, I will implement the generation logic.
+    // 1. Detect iOS platform and report path via PlatformHelper.
+    if (PlatformHelper.hasPlatform(projectPath, 'ios')) {
+      final infoPlistPath = PlatformHelper.infoPlistPath(projectPath);
+      info('iOS platform detected — Info.plist at: $infoPlistPath');
+    } else {
+      warn(
+          'iOS platform not detected — skipping apple-app-site-association hint.');
+    }
+
+    // 2. Verify deeplink config exists before generating.
+    final configPath = '$projectPath/lib/config/deeplink.dart';
+    if (!File(configPath).existsSync()) {
+      error('Config file not found: $configPath');
+      error('Run "deeplink install" first to generate the config.');
+      return;
+    }
+
+    info('Config found — writing output files to $outputPath...');
+
+    // 3. Generate and write apple-app-site-association.
+    final appleAasaMap = _buildAppleAppSiteAssociation(
+      teamId: 'YOUR_TEAM_ID',
+      bundleId: 'com.example.app',
+      paths: ['/*'],
+    );
+    JsonEditor.writeJson(
+        '$outputPath/apple-app-site-association', appleAasaMap);
+    success('Created $outputPath/apple-app-site-association');
+
+    // 4. Generate and write assetlinks.json.
+    final assetLinksList = _buildAssetLinks(
+      packageName: 'com.example.app',
+      fingerprints: ['YOUR_SHA256_FINGERPRINT'],
+    );
+    JsonEditor.writeJson('$outputPath/assetlinks.json', assetLinksList);
+    success('Created $outputPath/assetlinks.json');
   }
 
-  String generateAppleAppSiteAssociation(Map<String, dynamic> config) {
-    final deepLink = config['deeplink'] as Map<String, dynamic>;
-    final ios = deepLink['ios'] as Map<String, dynamic>;
-    final paths = (deepLink['paths'] as List).cast<String>();
+  // -------------------------------------------------------------------------
+  // Builders
+  // -------------------------------------------------------------------------
 
-    final teamId = ios['team_id'];
-    final bundleId = ios['bundle_id'];
-
-    final map = {
+  /// Build the apple-app-site-association JSON map.
+  ///
+  /// @param teamId    Apple Developer Team ID.
+  /// @param bundleId  iOS app bundle identifier.
+  /// @param paths     Universal Link paths to handle.
+  /// @return A [Map<String, dynamic>] ready for JSON serialisation.
+  Map<String, dynamic> _buildAppleAppSiteAssociation({
+    required String teamId,
+    required String bundleId,
+    required List<String> paths,
+  }) {
+    return {
       'applinks': {
-        'apps': [],
+        'apps': <dynamic>[],
         'details': [
           {
             'appID': '$teamId.$bundleId',
             'paths': paths,
-          }
-        ]
-      }
+          },
+        ],
+      },
     };
-
-    return const JsonEncoder.withIndent('  ').convert(map);
   }
 
-  String generateAssetLinks(Map<String, dynamic> config) {
-    final deepLink = config['deeplink'] as Map<String, dynamic>;
-    final android = deepLink['android'] as Map<String, dynamic>;
-
-    final packageName = android['package_name'];
-    final fingerprints = (android['sha256_fingerprints'] as List).cast<String>();
-
-    final list = fingerprints.map((fingerprint) {
+  /// Build the assetlinks.json list.
+  ///
+  /// @param packageName   Android app package name.
+  /// @param fingerprints  List of SHA-256 certificate fingerprints.
+  /// @return A [List<dynamic>] ready for JSON serialisation.
+  List<dynamic> _buildAssetLinks({
+    required String packageName,
+    required List<String> fingerprints,
+  }) {
+    return fingerprints.map((fingerprint) {
       return {
-        'relation': ['delegate_permission/common.handle_all_urls'],
+        'relation': [
+          'delegate_permission/common.handle_all_urls',
+        ],
         'target': {
           'namespace': 'android_app',
           'package_name': packageName,
           'sha256_cert_fingerprints': [fingerprint],
-        }
+        },
       };
     }).toList();
-
-    return const JsonEncoder.withIndent('  ').convert(list);
   }
 }

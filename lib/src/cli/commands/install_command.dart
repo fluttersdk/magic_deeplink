@@ -1,17 +1,24 @@
 import 'dart:io';
-import 'package:args/command_runner.dart';
-import 'package:magic_cli/magic_cli.dart' hide Command;
+
+import 'package:magic_cli/magic_cli.dart';
+
 import '../helpers/deeplink_config_helper.dart';
 
+/// CLI command to install the deep link configuration file into the project.
+///
+/// Writes `lib/config/deeplink.dart` to the current working directory.
+/// Skips the write if the file already exists unless `--force` is passed.
 class InstallCommand extends Command {
   @override
-  final String name = 'install';
+  String get name => 'install';
 
   @override
-  final String description = 'Install deep link configuration.';
+  String get description => 'Install deep link configuration.';
 
-  InstallCommand() {
-    argParser.addFlag(
+  /// {@macro magic_cli.Command.configure}
+  @override
+  void configure(ArgParser parser) {
+    parser.addFlag(
       'force',
       abbr: 'f',
       help: 'Overwrite existing configuration.',
@@ -20,26 +27,24 @@ class InstallCommand extends Command {
   }
 
   @override
-  Future<void> run() async {
-    // In a real implementation, this would write the file to the project.
-    // We are mocking the CLI environment here.
-    final force = argResults?['force'] as bool? ?? false;
-    // ignore: avoid_print
-    print(ConsoleStyle.info('Installing Deep Link configuration (force: $force)...'));
+  Future<void> handle() async {
+    final force = arguments['force'] as bool? ?? false;
+
+    info('Installing Deep Link configuration (force: $force)...');
 
     final configContent = DeeplinkConfigHelper.getDeeplinkConfigTemplate();
     final file = File('lib/config/deeplink.dart');
 
-    if (await file.exists() && !force) {
-      // ignore: avoid_print
-      print(ConsoleStyle.warning('Configuration file already exists. Use --force to overwrite.'));
+    // 1. Guard: skip if already exists and --force not set.
+    if (file.existsSync() && !force) {
+      warn('Configuration file already exists. Use --force to overwrite.');
       return;
     }
 
+    // 2. Write the config template to disk.
     await file.create(recursive: true);
     await file.writeAsString(configContent);
 
-    // ignore: avoid_print
-    print(ConsoleStyle.success('Created lib/config/deeplink.dart'));
+    success('Created lib/config/deeplink.dart');
   }
 }

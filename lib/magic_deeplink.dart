@@ -1,4 +1,4 @@
-library magic_deeplink;
+library;
 
 // Core
 export 'src/deeplink_manager.dart';

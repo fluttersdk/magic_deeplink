@@ -1,3 +1,4 @@
+
 import 'dart:async';
 import '../deeplink_manager.dart';
 
@@ -25,8 +26,7 @@ class OneSignalDeeplinkHandler {
   }
 
   /// Setup the listener for notification clicks
-  void setup(DeeplinkManager manager,
-      Stream<Map<String, dynamic>> notificationStream) {
+  void setup(DeeplinkManager manager, Stream<Map<String, dynamic>> notificationStream) {
     _subscription?.cancel();
     _subscription = notificationStream.listen((data) {
       final uri = extractUri(data);

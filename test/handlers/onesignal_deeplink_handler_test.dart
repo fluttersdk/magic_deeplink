@@ -26,14 +26,22 @@ void main() {
     });
 
     test('extractUri supports multiple keys', () {
-      expect(handler.extractUri({'url': 'https://a.com'}),
-          Uri.parse('https://a.com'));
-      expect(handler.extractUri({'deep_link': 'https://b.com'}),
-          Uri.parse('https://b.com'));
-      expect(handler.extractUri({'link': 'https://c.com'}),
-          Uri.parse('https://c.com'));
-      expect(handler.extractUri({'uri': 'https://d.com'}),
-          Uri.parse('https://d.com'));
+      expect(
+        handler.extractUri({'url': 'https://a.com'}),
+        Uri.parse('https://a.com')
+      );
+      expect(
+        handler.extractUri({'deep_link': 'https://b.com'}),
+        Uri.parse('https://b.com')
+      );
+      expect(
+        handler.extractUri({'link': 'https://c.com'}),
+        Uri.parse('https://c.com')
+      );
+      expect(
+        handler.extractUri({'uri': 'https://d.com'}),
+        Uri.parse('https://d.com')
+      );
     });
 
     test('extractUri returns null if no url found', () {
@@ -52,8 +60,7 @@ void main() {
       // Wait for stream to process
       await Future.delayed(Duration.zero);
 
-      expect(mockManager.lastHandledUri,
-          equals(Uri.parse('https://uptizm.com/test')));
+      expect(mockManager.lastHandledUri, equals(Uri.parse('https://uptizm.com/test')));
 
       await controller.close();
     });

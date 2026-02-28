@@ -15,8 +15,7 @@ class DeeplinkManager {
 
   final List<DeeplinkHandler> _handlers = [];
   DeeplinkDriver? _driver;
-  final StreamController<Uri> _linkController =
-      StreamController<Uri>.broadcast();
+  final StreamController<Uri> _linkController = StreamController<Uri>.broadcast();
   Uri? _initialLink;
   bool _initialLinkFetched = false;
 

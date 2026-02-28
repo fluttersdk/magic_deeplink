@@ -5,6 +5,5 @@ class DeeplinkException implements Exception {
   DeeplinkException(this.message, {this.code});
 
   @override
-  String toString() =>
-      'DeeplinkException: $message${code != null ? ' (code: $code)' : ''}';
+  String toString() => 'DeeplinkException: $message${code != null ? ' (code: $code)' : ''}';
 }

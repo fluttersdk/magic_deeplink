@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_magic/fluttersdk_magic.dart';
-import 'package:fluttersdk_magic_deeplink/src/deeplink_manager.dart';
-import 'package:fluttersdk_magic_deeplink/src/handlers/deeplink_handler.dart';
-import 'package:fluttersdk_magic_deeplink/src/drivers/app_links_driver.dart';
-import 'package:fluttersdk_magic_deeplink/src/providers/deeplink_service_provider.dart';
+import 'package:magic/magic.dart';
+import 'package:magic_deeplink/src/deeplink_manager.dart';
+import 'package:magic_deeplink/src/handlers/deeplink_handler.dart';
+import 'package:magic_deeplink/src/drivers/app_links_driver.dart';
+import 'package:magic_deeplink/src/providers/deeplink_service_provider.dart';
 
 class MockPushDriver {
   final StreamController<Map<String, dynamic>> _controller = StreamController.broadcast();

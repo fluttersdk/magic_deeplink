@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_magic_deeplink/src/drivers/app_links_driver.dart';
+import 'package:magic_deeplink/src/drivers/app_links_driver.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

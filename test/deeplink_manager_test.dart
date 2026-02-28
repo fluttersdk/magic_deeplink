@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_magic_deeplink/src/deeplink_manager.dart';
-import 'package:fluttersdk_magic_deeplink/src/handlers/deeplink_handler.dart';
-import 'package:fluttersdk_magic_deeplink/src/exceptions/deeplink_exception.dart';
-import 'package:fluttersdk_magic_deeplink/src/drivers/deeplink_driver.dart';
+import 'package:magic_deeplink/src/deeplink_manager.dart';
+import 'package:magic_deeplink/src/handlers/deeplink_handler.dart';
+import 'package:magic_deeplink/src/exceptions/deeplink_exception.dart';
+import 'package:magic_deeplink/src/drivers/deeplink_driver.dart';
 
 class MockDeeplinkHandler extends DeeplinkHandler {
   final bool canHandleValue;

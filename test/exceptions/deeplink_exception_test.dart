@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_magic_deeplink/src/exceptions/deeplink_exception.dart';
+import 'package:magic_deeplink/src/exceptions/deeplink_exception.dart';
 
 void main() {
   group('DeeplinkException', () {

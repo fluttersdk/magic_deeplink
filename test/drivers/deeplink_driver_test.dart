@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_magic_deeplink/src/drivers/deeplink_driver.dart';
+import 'package:magic_deeplink/src/drivers/deeplink_driver.dart';
 
 class TestDeeplinkDriver extends DeeplinkDriver {
   @override

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_magic_deeplink/src/handlers/onesignal_deeplink_handler.dart';
-import 'package:fluttersdk_magic_deeplink/src/deeplink_manager.dart';
+import 'package:magic_deeplink/src/handlers/onesignal_deeplink_handler.dart';
+import 'package:magic_deeplink/src/deeplink_manager.dart';
 
 // Mock DeeplinkManager
 class MockDeeplinkManager implements DeeplinkManager {

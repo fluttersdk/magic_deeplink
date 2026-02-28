@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_magic_deeplink/fluttersdk_magic_deeplink.dart';
+import 'package:magic_deeplink/magic_deeplink.dart';
 
 void main() {
   test('can import library and access all public exports', () {

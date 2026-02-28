@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fluttersdk_magic_deeplink/src/handlers/route_deeplink_handler.dart';
+import 'package:magic_deeplink/src/handlers/route_deeplink_handler.dart';
 
 void main() {
   group('RouteDeeplinkHandler', () {

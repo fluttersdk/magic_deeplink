@@ -4,11 +4,11 @@ import 'package:test/test.dart';
 
 import 'package:magic_deeplink/src/cli/commands/install_command.dart';
 
-/// Test subclass that overrides [getProjectRoot] to point at a temp directory.
-class _TestInstallCommand extends InstallCommand {
+// A test subclass that overrides getProjectRoot() to use a temp dir
+class TestInstallCommand extends InstallCommand {
   final String root;
 
-  _TestInstallCommand(this.root);
+  TestInstallCommand(this.root);
 
   @override
   String getProjectRoot() => root;
@@ -17,11 +17,11 @@ class _TestInstallCommand extends InstallCommand {
 void main() {
   group('InstallCommand', () {
     late Directory tempDir;
-    late _TestInstallCommand command;
+    late TestInstallCommand command;
 
     setUp(() {
       tempDir = Directory.systemTemp.createTempSync('install_command_test_');
-      command = _TestInstallCommand(tempDir.path);
+      command = TestInstallCommand(tempDir.path);
     });
 
     tearDown(() {
@@ -32,7 +32,7 @@ void main() {
       expect(command.name, 'install');
     });
 
-    test('description mentions deep link or configuration', () {
+    test('description contains deep link or configuration', () {
       expect(
         command.description.toLowerCase(),
         anyOf(
@@ -42,60 +42,49 @@ void main() {
       );
     });
 
-    test('configure accepts --force flag without error', () {
-      // If --force is not registered, runWith throws FormatException.
+    test('configure adds --force flag with abbr f', () {
       expect(() => command.runWith(['--force']), returnsNormally);
     });
 
-    test('configure accepts -f abbr without error', () {
-      final cmd2 = _TestInstallCommand(tempDir.path);
+    test('--force flag abbr is f', () {
+      final cmd2 = TestInstallCommand(tempDir.path);
       expect(() => cmd2.runWith(['-f']), returnsNormally);
     });
 
-    test('handle creates lib/config/deeplink.dart in project root', () async {
+    test('handle creates lib/config/deeplink.dart', () async {
       await command.runWith([]);
 
       final configFile = File('${tempDir.path}/lib/config/deeplink.dart');
       expect(configFile.existsSync(), isTrue);
-    });
 
-    test('handle writes DeeplinkConfigHelper template content', () async {
-      await command.runWith([]);
-
-      final configFile = File('${tempDir.path}/lib/config/deeplink.dart');
       final content = configFile.readAsStringSync();
       expect(content, contains('deeplinkConfig'));
       expect(content, contains("'deeplink':"));
     });
 
-    test('handle skips write when file exists and --force not set', () async {
-      // Create the file first.
+    test('handle skips write when file exists and no --force', () async {
       final configFile = File('${tempDir.path}/lib/config/deeplink.dart');
       configFile.createSync(recursive: true);
       configFile.writeAsStringSync('// original content');
 
       await command.runWith([]);
 
-      // Content should NOT be overwritten.
       expect(configFile.readAsStringSync(), '// original content');
     });
 
     test('handle overwrites when --force is set', () async {
-      // Create the file first.
       final configFile = File('${tempDir.path}/lib/config/deeplink.dart');
       configFile.createSync(recursive: true);
       configFile.writeAsStringSync('// original content');
 
       await command.runWith(['--force']);
 
-      // Content should be overwritten with template.
       final content = configFile.readAsStringSync();
       expect(content, contains('deeplinkConfig'));
       expect(content, isNot(contains('// original content')));
     });
 
-    test('handle creates parent directories when they do not exist', () async {
-      // Temp dir has no lib/config/ yet.
+    test('handle creates parent directories', () async {
       expect(
         Directory('${tempDir.path}/lib/config').existsSync(),
         isFalse,

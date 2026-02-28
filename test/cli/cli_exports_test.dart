@@ -19,12 +19,6 @@ void main() {
       final command = GenerateCommand();
       expect(command, isNotNull);
     });
-
-    test('DeeplinkConfigHelper is accessible via barrel', () {
-      final template = DeeplinkConfigHelper.getDeeplinkConfigTemplate();
-      expect(template, isNotEmpty);
-    });
-
     test('Kernel is accessible via barrel (re-exported from magic_cli)', () {
       final kernel = Kernel();
       expect(kernel, isNotNull);

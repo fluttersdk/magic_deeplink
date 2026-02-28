@@ -13,6 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout magic framework (sibling dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: fluttersdk/magic
+          path: ../magic
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -30,7 +36,7 @@ jobs:
         run: dart format --set-exit-if-changed .
 
       - name: Run tests
-        run: flutter test --coverage
+        run: dart test test/cli/
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

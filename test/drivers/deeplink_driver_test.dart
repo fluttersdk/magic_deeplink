@@ -15,7 +15,8 @@ class TestDeeplinkDriver extends DeeplinkDriver {
   Future<Uri?> getInitialLink() async => Uri.parse('https://example.com');
 
   @override
-  Stream<Uri> get onLink => Stream.value(Uri.parse('https://example.com/stream'));
+  Stream<Uri> get onLink =>
+      Stream.value(Uri.parse('https://example.com/stream'));
 
   @override
   void dispose() {}

@@ -83,7 +83,8 @@ class GenerateCommand extends Command {
     String teamId = arguments['team-id'] as String? ?? '';
     String bundleId = arguments['bundle-id'] as String? ?? '';
     String packageName = arguments['package-name'] as String? ?? '';
-    List<String> fingerprints = arguments['sha256-fingerprints'] as List<String>? ?? [];
+    List<String> fingerprints =
+        arguments['sha256-fingerprints'] as List<String>? ?? [];
     List<String> paths = arguments['paths'] as List<String>? ?? [];
 
     // 2. Resolve paths for the operation.
@@ -114,7 +115,9 @@ class GenerateCommand extends Command {
       // Only use config paths if CLI didn't explicitly provide paths.
       // `paths` has a default value `['/*']` in `configure()`. We only override it
       // if it equals the default AND config has paths.
-      if (paths.length == 1 && paths.first == '/*' && (config['paths'] as List<String>? ?? []).isNotEmpty) {
+      if (paths.length == 1 &&
+          paths.first == '/*' &&
+          (config['paths'] as List<String>? ?? []).isNotEmpty) {
         paths = config['paths'] as List<String>;
       }
     }
@@ -167,24 +170,31 @@ class GenerateCommand extends Command {
       config['teamId'] = teamIdMatch.group(1);
     }
 
-    final bundleIdMatch = RegExp(r"'bundle_id':\s*'([^']+)'").firstMatch(content);
+    final bundleIdMatch =
+        RegExp(r"'bundle_id':\s*'([^']+)'").firstMatch(content);
     if (bundleIdMatch != null) {
       config['bundleId'] = bundleIdMatch.group(1);
     }
 
-    final packageNameMatch = RegExp(r"'package_name':\s*'([^']+)'").firstMatch(content);
+    final packageNameMatch =
+        RegExp(r"'package_name':\s*'([^']+)'").firstMatch(content);
     if (packageNameMatch != null) {
       config['packageName'] = packageNameMatch.group(1);
     }
 
-    final fingerprintsMatch = RegExp(r"'sha256_fingerprints':\s*\[(.*?)\]", dotAll: true).firstMatch(content);
+    final fingerprintsMatch =
+        RegExp(r"'sha256_fingerprints':\s*\[(.*?)\]", dotAll: true)
+            .firstMatch(content);
     if (fingerprintsMatch != null) {
       final fingerprintsContent = fingerprintsMatch.group(1) ?? '';
-      final fingerprintMatches = RegExp(r"'([^']+)'").allMatches(fingerprintsContent);
-      config['fingerprints'] = fingerprintMatches.map((m) => m.group(1)!).toList();
+      final fingerprintMatches =
+          RegExp(r"'([^']+)'").allMatches(fingerprintsContent);
+      config['fingerprints'] =
+          fingerprintMatches.map((m) => m.group(1)!).toList();
     }
 
-    final pathsMatch = RegExp(r"'paths':\s*\[(.*?)\]", dotAll: true).firstMatch(content);
+    final pathsMatch =
+        RegExp(r"'paths':\s*\[(.*?)\]", dotAll: true).firstMatch(content);
     if (pathsMatch != null) {
       final pathsContent = pathsMatch.group(1) ?? '';
       final pathMatches = RegExp(r"'([^']+)'").allMatches(pathsContent);

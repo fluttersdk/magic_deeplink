@@ -104,7 +104,8 @@ void main() {
     // parseDeeplinkConfig()
     // -----------------------------------------------------------------------
 
-    test('parseDeeplinkConfig parses team_id and bundle_id from config content', () {
+    test('parseDeeplinkConfig parses team_id and bundle_id from config content',
+        () {
       final content = '''
 Map<String, dynamic> get deeplinkConfig => {
   'deeplink': {
@@ -157,7 +158,9 @@ Map<String, dynamic> get deeplinkConfig => {
       expect(config['paths'], ['/users/*', '/posts/*']);
     });
 
-    test('parseDeeplinkConfig returns empty values when config has no matching keys', () {
+    test(
+        'parseDeeplinkConfig returns empty values when config has no matching keys',
+        () {
       final content = '''
 Map<String, dynamic> get deeplinkConfig => {
   'deeplink': {
@@ -271,7 +274,8 @@ Map<String, dynamic> get deeplinkConfig => {
       );
     });
 
-    test('handle reads from config file when present and no CLI flags', () async {
+    test('handle reads from config file when present and no CLI flags',
+        () async {
       // Create config file
       final configDir = Directory('${tempDir.path}/lib/config');
       configDir.createSync(recursive: true);
@@ -298,7 +302,8 @@ Map<String, dynamic> get deeplinkConfig => {
 
       await command.runWith(['--output', 'public']);
 
-      final aasaFile = File('${tempDir.path}/public/apple-app-site-association');
+      final aasaFile =
+          File('${tempDir.path}/public/apple-app-site-association');
       expect(aasaFile.existsSync(), isTrue);
 
       final aasaJson = jsonDecode(aasaFile.readAsStringSync());
@@ -309,9 +314,13 @@ Map<String, dynamic> get deeplinkConfig => {
       final assetLinksFile = File('${tempDir.path}/public/assetlinks.json');
       expect(assetLinksFile.existsSync(), isTrue);
 
-      final assetLinksJson = jsonDecode(assetLinksFile.readAsStringSync()) as List;
-      expect((assetLinksJson.first['target'] as Map)['package_name'], 'com.config.android');
-      expect((assetLinksJson.first['target'] as Map)['sha256_cert_fingerprints'], ['CONFIG:FP']);
+      final assetLinksJson =
+          jsonDecode(assetLinksFile.readAsStringSync()) as List;
+      expect((assetLinksJson.first['target'] as Map)['package_name'],
+          'com.config.android');
+      expect(
+          (assetLinksJson.first['target'] as Map)['sha256_cert_fingerprints'],
+          ['CONFIG:FP']);
     });
 
     test('handle CLI flags override config file values', () async {
@@ -354,7 +363,8 @@ Map<String, dynamic> get deeplinkConfig => {
         '/cli/*',
       ]);
 
-      final aasaFile = File('${tempDir.path}/public/apple-app-site-association');
+      final aasaFile =
+          File('${tempDir.path}/public/apple-app-site-association');
       expect(aasaFile.existsSync(), isTrue);
 
       final aasaJson = jsonDecode(aasaFile.readAsStringSync());
@@ -365,9 +375,13 @@ Map<String, dynamic> get deeplinkConfig => {
       final assetLinksFile = File('${tempDir.path}/public/assetlinks.json');
       expect(assetLinksFile.existsSync(), isTrue);
 
-      final assetLinksJson = jsonDecode(assetLinksFile.readAsStringSync()) as List;
-      expect((assetLinksJson.first['target'] as Map)['package_name'], 'com.cli.android');
-      expect((assetLinksJson.first['target'] as Map)['sha256_cert_fingerprints'], ['CLI:FP']);
+      final assetLinksJson =
+          jsonDecode(assetLinksFile.readAsStringSync()) as List;
+      expect((assetLinksJson.first['target'] as Map)['package_name'],
+          'com.cli.android');
+      expect(
+          (assetLinksJson.first['target'] as Map)['sha256_cert_fingerprints'],
+          ['CLI:FP']);
     });
   });
 }

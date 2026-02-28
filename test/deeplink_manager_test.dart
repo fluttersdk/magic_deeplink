@@ -93,8 +93,10 @@ void main() {
 
     test('handleUri calls first matching handler', () async {
       final handler1 = MockDeeplinkHandler(canHandleValue: false);
-      final handler2 = MockDeeplinkHandler(canHandleValue: true, handleValue: true);
-      final handler3 = MockDeeplinkHandler(canHandleValue: true, handleValue: false);
+      final handler2 =
+          MockDeeplinkHandler(canHandleValue: true, handleValue: true);
+      final handler3 =
+          MockDeeplinkHandler(canHandleValue: true, handleValue: false);
 
       manager.registerHandler(handler1);
       manager.registerHandler(handler2);

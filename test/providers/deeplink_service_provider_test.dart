@@ -7,7 +7,8 @@ import 'package:magic_deeplink/src/drivers/app_links_driver.dart';
 import 'package:magic_deeplink/src/providers/deeplink_service_provider.dart';
 
 class MockPushDriver {
-  final StreamController<Map<String, dynamic>> _controller = StreamController.broadcast();
+  final StreamController<Map<String, dynamic>> _controller =
+      StreamController.broadcast();
   Stream<Map<String, dynamic>> get onNotificationClicked => _controller.stream;
 
   void simulateClick(Map<String, dynamic> data) {
@@ -90,7 +91,9 @@ void main() {
       expect(manager.onLink, isA<Stream<Uri>>());
     });
 
-    test('boot sets up OneSignal handler when notifications plugin is available', () async {
+    test(
+        'boot sets up OneSignal handler when notifications plugin is available',
+        () async {
       // Setup config
       await MagicApp.init(configs: [
         {
@@ -130,15 +133,14 @@ void main() {
 
       // Actually, we can use a custom handler in the manager to verify it received the call.
       bool handlerCalled = false;
-      manager.registerHandler(
-        _TestHandler((uri) {
-          handlerCalled = true;
-          return uri.path == '/onesignal';
-        })
-      );
+      manager.registerHandler(_TestHandler((uri) {
+        handlerCalled = true;
+        return uri.path == '/onesignal';
+      }));
 
       // Simulate click
-      mockNotificationManager.pushDriver.simulateClick({'url': 'https://uptizm.com/onesignal'});
+      mockNotificationManager.pushDriver
+          .simulateClick({'url': 'https://uptizm.com/onesignal'});
 
       // Wait for async processing
       await Future.delayed(Duration.zero);

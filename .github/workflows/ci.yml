@@ -13,8 +13,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Clone magic framework (sibling dependency)
-        run: git clone --depth 1 https://github.com/fluttersdk/magic.git ../magic
+      - name: Checkout magic framework (sibling dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: fluttersdk/magic
+          path: ../magic
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2

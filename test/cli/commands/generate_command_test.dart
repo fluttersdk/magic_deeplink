@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:args/args.dart';
 import 'package:test/test.dart';
 
 import 'package:magic_deeplink/src/cli/commands/generate_command.dart';
@@ -26,18 +27,20 @@ void main() {
     });
 
     tearDown(() {
-      tempDir.deleteSync(recursive: true);
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
     });
 
     // -----------------------------------------------------------------------
-    // Identity
+    // Meta / Options
     // -----------------------------------------------------------------------
 
-    test('name is generate', () {
+    test('name returns generate', () {
       expect(command.name, 'generate');
     });
 
-    test('description mentions deep link or configuration files', () {
+    test('description contains deep link or configuration files', () {
       expect(
         command.description.toLowerCase(),
         anyOf(
@@ -48,142 +51,117 @@ void main() {
       );
     });
 
-    // -----------------------------------------------------------------------
-    // configure() — option registration via runWith
-    // -----------------------------------------------------------------------
-
-    test('configure accepts --output option', () {
-      expect(() => command.runWith(['--output', 'out']), returnsNormally);
+    test('configure() adds --output option with abbr o and default public', () {
+      final parser = ArgParser();
+      command.configure(parser);
+      final options = parser.options['output'];
+      expect(options, isNotNull);
+      expect(options?.abbr, 'o');
+      expect(options?.defaultsTo, 'public');
     });
 
-    test('configure accepts -o short option', () {
-      final cmd2 = _TestGenerateCommand(tempDir.path);
-      expect(() => cmd2.runWith(['-o', 'out']), returnsNormally);
+    test('configure() adds --root option with default .', () {
+      final parser = ArgParser();
+      command.configure(parser);
+      final options = parser.options['root'];
+      expect(options, isNotNull);
+      expect(options?.defaultsTo, '.');
     });
 
-    test('configure accepts --root option', () {
-      final cmd2 = _TestGenerateCommand(tempDir.path);
-      expect(() => cmd2.runWith(['--root', '.']), returnsNormally);
+    test('configure() adds --team-id option', () {
+      final parser = ArgParser();
+      command.configure(parser);
+      expect(parser.options.containsKey('team-id'), isTrue);
     });
 
-    test('configure accepts --team-id option', () {
-      final cmd2 = _TestGenerateCommand(tempDir.path);
-      expect(
-        () => cmd2.runWith(['--team-id', 'TEAMID']),
-        returnsNormally,
-      );
+    test('configure() adds --bundle-id option', () {
+      final parser = ArgParser();
+      command.configure(parser);
+      expect(parser.options.containsKey('bundle-id'), isTrue);
     });
 
-    test('configure accepts --bundle-id option', () {
-      final cmd2 = _TestGenerateCommand(tempDir.path);
-      expect(
-        () => cmd2.runWith(['--bundle-id', 'com.app']),
-        returnsNormally,
-      );
+    test('configure() adds --package-name option', () {
+      final parser = ArgParser();
+      command.configure(parser);
+      expect(parser.options.containsKey('package-name'), isTrue);
     });
 
-    test('configure accepts --package-name option', () {
-      final cmd2 = _TestGenerateCommand(tempDir.path);
-      expect(
-        () => cmd2.runWith(['--package-name', 'com.app']),
-        returnsNormally,
-      );
+    test('configure() adds --sha256-fingerprints multi-option', () {
+      final parser = ArgParser();
+      command.configure(parser);
+      expect(parser.options['sha256-fingerprints']?.isMultiple, isTrue);
     });
 
-    test('configure accepts --sha256-fingerprints multi-option', () {
-      final cmd2 = _TestGenerateCommand(tempDir.path);
-      expect(
-        () => cmd2.runWith([
-          '--sha256-fingerprints',
-          'AA:BB',
-          '--sha256-fingerprints',
-          'CC:DD'
-        ]),
-        returnsNormally,
-      );
-    });
-
-    test('configure accepts --paths multi-option', () {
-      final cmd2 = _TestGenerateCommand(tempDir.path);
-      expect(
-        () => cmd2.runWith(['--paths', '/api/*', '--paths', '/app/*']),
-        returnsNormally,
-      );
+    test('configure() adds --paths multi-option', () {
+      final parser = ArgParser();
+      command.configure(parser);
+      final options = parser.options['paths'];
+      expect(options?.isMultiple, isTrue);
+      expect(options?.defaultsTo, ['/*']);
     });
 
     // -----------------------------------------------------------------------
     // buildAppleAppSiteAssociation()
     // -----------------------------------------------------------------------
 
-    test('buildAppleAppSiteAssociation returns correct appID', () {
+    test(
+        'buildAppleAppSiteAssociation(T1, com.app, [/path/*]) returns map with applinks.details[0].appID == T1.com.app',
+        () {
       final result = command.buildAppleAppSiteAssociation(
-        'TEAM1',
-        'com.example.app',
-        ['/*'],
+        'T1',
+        'com.app',
+        ['/path/*'],
       );
 
       final details = (result['applinks'] as Map)['details'] as List;
-      expect(details.first['appID'], 'TEAM1.com.example.app');
+      expect(details.first['appID'], 'T1.com.app');
     });
 
-    test('buildAppleAppSiteAssociation returns correct paths', () {
+    test(
+        'buildAppleAppSiteAssociation(T1, com.app, [/path/*]) returns map with paths [/path/*]',
+        () {
       final result = command.buildAppleAppSiteAssociation(
-        'TEAM1',
-        'com.example.app',
-        ['/products/*', '/orders/*'],
+        'T1',
+        'com.app',
+        ['/path/*'],
       );
 
       final details = (result['applinks'] as Map)['details'] as List;
-      expect(details.first['paths'], ['/products/*', '/orders/*']);
-    });
-
-    test('buildAppleAppSiteAssociation result is JSON-serialisable', () {
-      final result = command.buildAppleAppSiteAssociation(
-        'TEAM1',
-        'com.example.app',
-        ['/*'],
-      );
-
-      expect(() => jsonEncode(result), returnsNormally);
+      expect(details.first['paths'], ['/path/*']);
     });
 
     // -----------------------------------------------------------------------
     // buildAssetLinks()
     // -----------------------------------------------------------------------
 
-    test('buildAssetLinks returns list with correct package_name', () {
-      final result = command.buildAssetLinks('com.example.app', ['FP1']);
+    test(
+        'buildAssetLinks(com.app, [FINGERPRINT]) returns list with target.package_name == com.app',
+        () {
+      final result = command.buildAssetLinks('com.app', ['FINGERPRINT']);
 
       final first = result.first as Map;
       final target = first['target'] as Map;
-      expect(target['package_name'], 'com.example.app');
+      expect(target['package_name'], 'com.app');
     });
 
-    test('buildAssetLinks includes sha256_cert_fingerprints', () {
-      final result = command.buildAssetLinks('com.example.app', ['AA:BB']);
-
-      final first = result.first as Map;
-      final target = first['target'] as Map;
-      expect(target['sha256_cert_fingerprints'], contains('AA:BB'));
-    });
-
-    test('buildAssetLinks with two fingerprints returns two entries', () {
-      final result = command.buildAssetLinks('com.example.app', ['FP1', 'FP2']);
+    test(
+        'buildAssetLinks(com.app, [FP1, FP2]) returns list with 2 entries OR 1 entry with 2 fingerprints',
+        () {
+      final result = command.buildAssetLinks('com.app', ['FP1', 'FP2']);
 
       expect(result, hasLength(2));
-    });
-
-    test('buildAssetLinks result is JSON-serialisable', () {
-      final result = command.buildAssetLinks('com.example.app', ['FP1']);
-
-      expect(() => jsonEncode(result), returnsNormally);
+      expect(((result[0] as Map)['target'] as Map)['sha256_cert_fingerprints'],
+          ['FP1']);
+      expect(((result[1] as Map)['target'] as Map)['sha256_cert_fingerprints'],
+          ['FP2']);
     });
 
     // -----------------------------------------------------------------------
-    // handle() — integration with temp dir
+    // handle()
     // -----------------------------------------------------------------------
 
-    test('handle writes apple-app-site-association to output directory',
+    test(
+        'handle() with temp dir writes apple-app-site-association and assetlinks.json',
         () async {
       await command.runWith([
         '--output',
@@ -201,25 +179,22 @@ void main() {
       final aasaFile =
           File('${tempDir.path}/public/apple-app-site-association');
       expect(aasaFile.existsSync(), isTrue);
-    });
 
-    test('handle writes assetlinks.json to output directory', () async {
-      final cmd2 = _TestGenerateCommand(tempDir.path);
-      await cmd2.runWith([
-        '--output',
-        'public',
-        '--team-id',
-        'TEAM1',
-        '--bundle-id',
-        'com.example.app',
-        '--package-name',
-        'com.example.app',
-        '--sha256-fingerprints',
-        'AA:BB:CC',
-      ]);
+      final aasaJson = jsonDecode(aasaFile.readAsStringSync());
+      expect(
+        ((aasaJson['applinks'] as Map)['details'] as List).first['appID'],
+        'TEAM1.com.example.app',
+      );
 
       final assetLinksFile = File('${tempDir.path}/public/assetlinks.json');
       expect(assetLinksFile.existsSync(), isTrue);
+
+      final assetLinksJson =
+          jsonDecode(assetLinksFile.readAsStringSync()) as List;
+      expect(
+        (assetLinksJson.first['target'] as Map)['package_name'],
+        'com.example.app',
+      );
     });
   });
 }

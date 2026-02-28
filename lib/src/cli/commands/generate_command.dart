@@ -36,47 +36,47 @@ class GenerateCommand extends Command {
     parser.addOption(
       'output',
       abbr: 'o',
-      help: 'Output directory for generated files (relative to project root).',
       defaultsTo: 'public',
+      help: 'Output directory for generated files (relative to project root).',
     );
 
     parser.addOption(
       'root',
-      help: 'Project root directory (defaults to current working directory).',
       defaultsTo: '.',
+      help: 'Project root directory (defaults to current working directory).',
     );
 
     parser.addOption(
       'team-id',
-      help: 'Apple Developer Team ID — used for apple-app-site-association.',
+      help: 'Apple Developer Team ID (for AASA).',
     );
 
     parser.addOption(
       'bundle-id',
-      help: 'iOS app bundle identifier — used for apple-app-site-association.',
+      help: 'iOS app bundle identifier.',
     );
 
     parser.addOption(
       'package-name',
-      help: 'Android package name — used for assetlinks.json.',
+      help: 'Android package name.',
     );
 
     parser.addMultiOption(
       'sha256-fingerprints',
-      help: 'SHA-256 certificate fingerprints — used for assetlinks.json.',
+      help: 'SHA-256 fingerprints.',
     );
 
     parser.addMultiOption(
       'paths',
-      help: 'Universal Link / App Link paths to register.',
       defaultsTo: ['/*'],
+      help: 'Paths to handle.',
     );
   }
 
   @override
   Future<void> handle() async {
     // 1. Read all CLI option values — no defaults live in this method.
-    final root = getProjectRoot();
+    final root = arguments['root'] as String? ?? '.';
     final outputDir = arguments['output'] as String? ?? 'public';
     final teamId = arguments['team-id'] as String? ?? '';
     final bundleId = arguments['bundle-id'] as String? ?? '';
@@ -85,17 +85,20 @@ class GenerateCommand extends Command {
         arguments['sha256-fingerprints'] as List<String>? ?? [];
     final paths = arguments['paths'] as List<String>? ?? ['/*'];
 
-    final outputPath = '$root/$outputDir';
+    // 2. Resolve paths for the operation.
+    final projectRoot = getProjectRoot();
+    final effectiveRoot = root == '.' ? projectRoot : root;
+    final outputPath = '$effectiveRoot/$outputDir';
 
     info('Generating deep link files in $outputPath...');
 
-    // 2. Detect iOS platform via PlatformHelper — inform user about AASA placement.
-    if (PlatformHelper.hasPlatform(root, 'ios')) {
+    // 3. Detect iOS platform via PlatformHelper — inform user about AASA placement.
+    if (PlatformHelper.hasPlatform(effectiveRoot, 'ios')) {
       info(
           'iOS platform detected — upload apple-app-site-association to your web server root.');
     }
 
-    // 3. Build and write apple-app-site-association (iOS Universal Links).
+    // 4. Build and write apple-app-site-association (iOS Universal Links).
     if (teamId.isNotEmpty && bundleId.isNotEmpty) {
       final aasaData = buildAppleAppSiteAssociation(teamId, bundleId, paths);
       JsonEditor.writeJson('$outputPath/apple-app-site-association', aasaData);
@@ -105,7 +108,7 @@ class GenerateCommand extends Command {
           'Skipping apple-app-site-association — provide --team-id and --bundle-id.');
     }
 
-    // 4. Build and write assetlinks.json (Android App Links).
+    // 5. Build and write assetlinks.json (Android App Links).
     if (packageName.isNotEmpty && fingerprints.isNotEmpty) {
       final assetLinksData = buildAssetLinks(packageName, fingerprints);
       JsonEditor.writeJson('$outputPath/assetlinks.json', assetLinksData);

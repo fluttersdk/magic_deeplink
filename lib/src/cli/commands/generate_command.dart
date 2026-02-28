@@ -11,8 +11,8 @@ import 'package:magic_cli/magic_cli.dart';
 /// ```bash
 /// dart run magic_deeplink generate \
 ///   --team-id ABCDE12345 \
-///   --bundle-id com.example.app \
-///   --package-name com.example.app \
+///   --bundle-id your.package.name \
+///   --package-name your.package.name \
 ///   --sha256-fingerprints AA:BB:CC:... \
 ///   --output public
 /// ```

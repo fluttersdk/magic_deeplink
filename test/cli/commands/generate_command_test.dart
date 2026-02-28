@@ -101,6 +101,80 @@ void main() {
     });
 
     // -----------------------------------------------------------------------
+    // parseDeeplinkConfig()
+    // -----------------------------------------------------------------------
+
+    test('parseDeeplinkConfig parses team_id and bundle_id from config content', () {
+      final content = '''
+Map<String, dynamic> get deeplinkConfig => {
+  'deeplink': {
+    'ios': {
+      'team_id': 'TEAM123',
+      'bundle_id': 'com.example.app',
+    },
+  },
+};
+''';
+      final config = command.parseDeeplinkConfig(content);
+
+      expect(config['teamId'], 'TEAM123');
+      expect(config['bundleId'], 'com.example.app');
+    });
+
+    test('parseDeeplinkConfig parses package_name and fingerprints', () {
+      final content = '''
+Map<String, dynamic> get deeplinkConfig => {
+  'deeplink': {
+    'android': {
+      'package_name': 'com.example.android',
+      'sha256_fingerprints': [
+        'AA:BB:CC:DD',
+        '11:22:33:44',
+      ],
+    },
+  },
+};
+''';
+      final config = command.parseDeeplinkConfig(content);
+
+      expect(config['packageName'], 'com.example.android');
+      expect(config['fingerprints'], ['AA:BB:CC:DD', '11:22:33:44']);
+    });
+
+    test('parseDeeplinkConfig parses paths', () {
+      final content = '''
+Map<String, dynamic> get deeplinkConfig => {
+  'deeplink': {
+    'paths': [
+      '/users/*',
+      '/posts/*',
+    ],
+  },
+};
+''';
+      final config = command.parseDeeplinkConfig(content);
+
+      expect(config['paths'], ['/users/*', '/posts/*']);
+    });
+
+    test('parseDeeplinkConfig returns empty values when config has no matching keys', () {
+      final content = '''
+Map<String, dynamic> get deeplinkConfig => {
+  'deeplink': {
+    'enabled': true,
+  },
+};
+''';
+      final config = command.parseDeeplinkConfig(content);
+
+      expect(config.containsKey('teamId'), isFalse);
+      expect(config.containsKey('bundleId'), isFalse);
+      expect(config.containsKey('packageName'), isFalse);
+      expect(config.containsKey('fingerprints'), isFalse);
+      expect(config.containsKey('paths'), isFalse);
+    });
+
+    // -----------------------------------------------------------------------
     // buildAppleAppSiteAssociation()
     // -----------------------------------------------------------------------
 
@@ -195,6 +269,105 @@ void main() {
         (assetLinksJson.first['target'] as Map)['package_name'],
         'com.example.app',
       );
+    });
+
+    test('handle reads from config file when present and no CLI flags', () async {
+      // Create config file
+      final configDir = Directory('${tempDir.path}/lib/config');
+      configDir.createSync(recursive: true);
+      final configFile = File('${configDir.path}/deeplink.dart');
+      configFile.writeAsStringSync('''
+Map<String, dynamic> get deeplinkConfig => {
+  'deeplink': {
+    'ios': {
+      'team_id': 'CONFIG_TEAM',
+      'bundle_id': 'com.config.ios',
+    },
+    'android': {
+      'package_name': 'com.config.android',
+      'sha256_fingerprints': [
+        'CONFIG:FP',
+      ],
+    },
+    'paths': [
+      '/config/*',
+    ],
+  },
+};
+''');
+
+      await command.runWith(['--output', 'public']);
+
+      final aasaFile = File('${tempDir.path}/public/apple-app-site-association');
+      expect(aasaFile.existsSync(), isTrue);
+
+      final aasaJson = jsonDecode(aasaFile.readAsStringSync());
+      final aasaDetails = (aasaJson['applinks'] as Map)['details'] as List;
+      expect(aasaDetails.first['appID'], 'CONFIG_TEAM.com.config.ios');
+      expect(aasaDetails.first['paths'], ['/config/*']);
+
+      final assetLinksFile = File('${tempDir.path}/public/assetlinks.json');
+      expect(assetLinksFile.existsSync(), isTrue);
+
+      final assetLinksJson = jsonDecode(assetLinksFile.readAsStringSync()) as List;
+      expect((assetLinksJson.first['target'] as Map)['package_name'], 'com.config.android');
+      expect((assetLinksJson.first['target'] as Map)['sha256_cert_fingerprints'], ['CONFIG:FP']);
+    });
+
+    test('handle CLI flags override config file values', () async {
+      // Create config file
+      final configDir = Directory('${tempDir.path}/lib/config');
+      configDir.createSync(recursive: true);
+      final configFile = File('${configDir.path}/deeplink.dart');
+      configFile.writeAsStringSync('''
+Map<String, dynamic> get deeplinkConfig => {
+  'deeplink': {
+    'ios': {
+      'team_id': 'CONFIG_TEAM',
+      'bundle_id': 'com.config.ios',
+    },
+    'android': {
+      'package_name': 'com.config.android',
+      'sha256_fingerprints': [
+        'CONFIG:FP',
+      ],
+    },
+    'paths': [
+      '/config/*',
+    ],
+  },
+};
+''');
+
+      await command.runWith([
+        '--output',
+        'public',
+        '--team-id',
+        'CLI_TEAM',
+        '--bundle-id',
+        'com.cli.ios',
+        '--package-name',
+        'com.cli.android',
+        '--sha256-fingerprints',
+        'CLI:FP',
+        '--paths',
+        '/cli/*',
+      ]);
+
+      final aasaFile = File('${tempDir.path}/public/apple-app-site-association');
+      expect(aasaFile.existsSync(), isTrue);
+
+      final aasaJson = jsonDecode(aasaFile.readAsStringSync());
+      final aasaDetails = (aasaJson['applinks'] as Map)['details'] as List;
+      expect(aasaDetails.first['appID'], 'CLI_TEAM.com.cli.ios');
+      expect(aasaDetails.first['paths'], ['/cli/*']);
+
+      final assetLinksFile = File('${tempDir.path}/public/assetlinks.json');
+      expect(assetLinksFile.existsSync(), isTrue);
+
+      final assetLinksJson = jsonDecode(assetLinksFile.readAsStringSync()) as List;
+      expect((assetLinksJson.first['target'] as Map)['package_name'], 'com.cli.android');
+      expect((assetLinksJson.first['target'] as Map)['sha256_cert_fingerprints'], ['CLI:FP']);
     });
   });
 }

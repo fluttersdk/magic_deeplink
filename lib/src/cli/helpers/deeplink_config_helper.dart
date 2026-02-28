@@ -1,4 +1,9 @@
+/// Helper class for generating deep link configuration templates.
 class DeeplinkConfigHelper {
+  /// Returns a standardized Dart configuration template for deep links.
+  ///
+  /// The template includes default values for driver, domain, scheme, and platform-specific
+  /// configuration for iOS and Android.
   static String getDeeplinkConfigTemplate() {
     return r'''Map<String, dynamic> get deeplinkConfig => {
   'deeplink': {

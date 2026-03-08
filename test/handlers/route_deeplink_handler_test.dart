@@ -14,24 +14,32 @@ void main() {
     });
 
     test('canHandle matches exact paths', () {
-      expect(handler.canHandle(Uri.parse('https://example.com/settings')), isTrue);
-      expect(handler.canHandle(Uri.parse('https://example.com/settings/')), isTrue); // Trailing slash handling
+      expect(
+          handler.canHandle(Uri.parse('https://example.com/settings')), isTrue);
+      expect(handler.canHandle(Uri.parse('https://example.com/settings/')),
+          isTrue); // Trailing slash handling
     });
 
     test('canHandle matches wildcard paths', () {
-      expect(handler.canHandle(Uri.parse('https://example.com/monitors/123')), isTrue);
-      expect(handler.canHandle(Uri.parse('https://example.com/monitors/new')), isTrue);
+      expect(handler.canHandle(Uri.parse('https://example.com/monitors/123')),
+          isTrue);
+      expect(handler.canHandle(Uri.parse('https://example.com/monitors/new')),
+          isTrue);
     });
 
     test('canHandle matches parameter paths', () {
-       // Simple wildcard matching usually treats :id as * or specific segment
-       // For this implementation, we'll assume basic wildcard support or regex
-       expect(handler.canHandle(Uri.parse('https://example.com/teams/5')), isTrue);
+      // Simple wildcard matching usually treats :id as * or specific segment
+      // For this implementation, we'll assume basic wildcard support or regex
+      expect(
+          handler.canHandle(Uri.parse('https://example.com/teams/5')), isTrue);
     });
 
     test('canHandle rejects non-matching paths', () {
-      expect(handler.canHandle(Uri.parse('https://example.com/unknown')), isFalse);
-      expect(handler.canHandle(Uri.parse('https://example.com/settings/profile')), isFalse); // Exact match failed
+      expect(
+          handler.canHandle(Uri.parse('https://example.com/unknown')), isFalse);
+      expect(
+          handler.canHandle(Uri.parse('https://example.com/settings/profile')),
+          isFalse); // Exact match failed
     });
 
     test('handle attempts to navigate via MagicRoute', () async {

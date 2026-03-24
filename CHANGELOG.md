@@ -11,7 +11,7 @@ All notable changes to this project will be documented in this file.
 ### 🔧 Improvements
 - **Package naming**: Fix `fluttersdk_magic_deeplink` → `magic_deeplink` references for pub.dev publishing
 
-## [0.0.1] - 2026-03-25
+## [0.0.1-alpha.1] - 2026-03-25
 
 ### ✨ Core Features
 - **Unified Deep Link API**: Single interface for iOS Universal Links and Android App Links

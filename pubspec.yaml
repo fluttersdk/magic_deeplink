@@ -3,8 +3,8 @@ description: Deep linking support for Magic Framework (Universal Links, App Link
 version: 0.0.1-alpha.1
 homepage: https://magic.fluttersdk.com/deeplink
 documentation: https://magic.fluttersdk.com/packages/deeplink/getting-started/installation
-repository: https://github.com/fluttersdk/magic-deeplink
-issue_tracker: https://github.com/fluttersdk/magic-deeplink/issues
+repository: https://github.com/fluttersdk/magic_deeplink
+issue_tracker: https://github.com/fluttersdk/magic_deeplink/issues
 
 topics:
   - deeplink

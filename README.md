@@ -11,18 +11,18 @@
 
 <p align="center">
   <a href="https://pub.dev/packages/magic_deeplink"><img src="https://img.shields.io/pub/v/magic_deeplink.svg" alt="pub.dev version" /></a>
-  <a href="https://github.com/fluttersdk/magic-deeplink/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/fluttersdk/magic-deeplink/ci.yml?branch=master&label=CI" alt="CI Status" /></a>
+  <a href="https://github.com/fluttersdk/magic_deeplink/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/fluttersdk/magic_deeplink/ci.yml?branch=master&label=CI" alt="CI Status" /></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
   <a href="https://pub.dev/packages/magic_deeplink/score"><img src="https://img.shields.io/pub/points/magic_deeplink" alt="pub points" /></a>
-  <a href="https://github.com/fluttersdk/magic-deeplink/stargazers"><img src="https://img.shields.io/github/stars/fluttersdk/magic-deeplink?style=flat" alt="GitHub Stars" /></a>
+  <a href="https://github.com/fluttersdk/magic_deeplink/stargazers"><img src="https://img.shields.io/github/stars/fluttersdk/magic_deeplink?style=flat" alt="GitHub Stars" /></a>
 </p>
 
 <p align="center">
   <a href="https://magic.fluttersdk.com/deeplink">Website</a> ·
   <a href="https://magic.fluttersdk.com/packages/deeplink/getting-started/installation">Docs</a> ·
   <a href="https://pub.dev/packages/magic_deeplink">pub.dev</a> ·
-  <a href="https://github.com/fluttersdk/magic-deeplink/issues">Issues</a> ·
-  <a href="https://github.com/fluttersdk/magic-deeplink/discussions">Discussions</a>
+  <a href="https://github.com/fluttersdk/magic_deeplink/issues">Issues</a> ·
+  <a href="https://github.com/fluttersdk/magic_deeplink/discussions">Discussions</a>
 </p>
 
 ---
@@ -261,7 +261,7 @@ App launch → DeeplinkServiceProvider.boot()
 
 ## Contributing
 
-Contributions are welcome! Please see the [issues page](https://github.com/fluttersdk/magic-deeplink/issues) for open tasks or to report bugs.
+Contributions are welcome! Please see the [issues page](https://github.com/fluttersdk/magic_deeplink/issues) for open tasks or to report bugs.
 
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
@@ -279,5 +279,5 @@ Magic Deeplink is open-sourced software licensed under the [MIT License](LICENSE
 
 <p align="center">
   Built with care by <a href="https://github.com/fluttersdk">FlutterSDK</a><br/>
-  <sub>If Magic Deeplink helps your project, consider giving it a <a href="https://github.com/fluttersdk/magic-deeplink">star on GitHub</a>.</sub>
+  <sub>If Magic Deeplink helps your project, consider giving it a <a href="https://github.com/fluttersdk/magic_deeplink">star on GitHub</a>.</sub>
 </p>

@@ -32,7 +32,4 @@ migrate_working_dir/
 pubspec.lock
 
 # AI coding tools
-AGENTS.md
-.claude/
-.opencode/
-.sisyphus/
+.ac/

@@ -1,36 +1,94 @@
-# Magic Deeplink Plugin
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fluttersdk/magic/master/.github/magic-logo.svg" width="120" alt="Magic Logo" />
+</p>
 
-Universal Links (iOS) and App Links (Android) support for Magic Framework applications.
+<h1 align="center">Magic Deeplink</h1>
+
+<p align="center">
+  <strong>Universal Links & App Links for the Magic Framework.</strong><br/>
+  One unified API for deep linking on iOS and Android — powered by <code>app_links</code>.
+</p>
+
+<p align="center">
+  <a href="https://pub.dev/packages/magic_deeplink"><img src="https://img.shields.io/pub/v/magic_deeplink.svg" alt="pub.dev version" /></a>
+  <a href="https://github.com/fluttersdk/magic-deeplink/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/fluttersdk/magic-deeplink/ci.yml?branch=master&label=CI" alt="CI Status" /></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="https://pub.dev/packages/magic_deeplink/score"><img src="https://img.shields.io/pub/points/magic_deeplink" alt="pub points" /></a>
+  <a href="https://github.com/fluttersdk/magic-deeplink/stargazers"><img src="https://img.shields.io/github/stars/fluttersdk/magic-deeplink?style=flat" alt="GitHub Stars" /></a>
+</p>
+
+<p align="center">
+  <a href="https://magic.fluttersdk.com/deeplink">Website</a> ·
+  <a href="https://magic.fluttersdk.com/packages/deeplink/getting-started/installation">Docs</a> ·
+  <a href="https://pub.dev/packages/magic_deeplink">pub.dev</a> ·
+  <a href="https://github.com/fluttersdk/magic-deeplink/issues">Issues</a> ·
+  <a href="https://github.com/fluttersdk/magic-deeplink/discussions">Discussions</a>
+</p>
+
+---
+
+> **Alpha** — `magic_deeplink` is under active development. APIs may change between minor versions until `1.0.0`.
+
+---
+
+## Why Magic Deeplink?
+
+Setting up deep links in Flutter means dealing with platform-specific manifests, JSON files hosted on your server, parsing URIs in multiple places, and wiring it all together. Every project reinvents the same boilerplate.
+
+**Magic Deeplink** gives you a single, declarative config file. One CLI command generates the server-side files. One service provider boots everything. Handlers follow a clean chain-of-responsibility pattern — the first match wins.
+
+> **Config-driven deep linking.** Define your domain, paths, and platform credentials once. Magic Deeplink handles the rest.
+
+---
 
 ## Features
 
-- 🔗 **Unified API**: Single interface for handling deep links on iOS and Android
-- 🔌 **Driver Pattern**: Extensible driver architecture (defaults to `app_links`)
-- 🚦 **Route Handler**: Automatically maps deep link paths to Magic Routes
-- 🔔 **OneSignal Integration**: seamless handling of notification click actions
-- 🛠 **CLI Tools**: Auto-generate `apple-app-site-association` and `assetlinks.json`
+| | Feature | Description |
+|---|---------|-------------|
+| :link: | **Unified API** | Single interface for handling deep links on iOS and Android |
+| :electric_plug: | **Driver Pattern** | Extensible driver architecture — swap `app_links` for any custom driver |
+| :traffic_light: | **Route Handler** | Automatically maps deep link paths to Magic Routes |
+| :bell: | **OneSignal Integration** | Seamless handling of notification click actions via `magic_notifications` |
+| :hammer_and_wrench: | **CLI Tools** | Auto-generate `apple-app-site-association` and `assetlinks.json` |
+| :gear: | **Config-Driven** | All settings in one Dart config file — no platform manifest editing |
+| :jigsaw: | **Handler Chain** | Register custom handlers with `canHandle` / `handle` — first match wins |
+| :package: | **Pure Dart** | No native platform code — platform support via `app_links` package |
 
-## Installation
+---
 
-1. Add the plugin to your `pubspec.yaml`:
+## Quick Start
+
+### 1. Add the dependency
 
 ```yaml
 dependencies:
-  fluttersdk_magic_deeplink:
-    path: plugins/fluttersdk_magic_deeplink
+  magic_deeplink: ^0.0.1
 ```
 
-2. Run the install command to generate configuration:
+### 2. Install configuration
 
 ```bash
-dart run fluttersdk_magic_deeplink:install
+dart run magic_deeplink:install
 ```
 
-This will create `lib/config/deeplink.dart`.
+This generates `lib/config/deeplink.dart`, injects `DeeplinkServiceProvider` into `lib/config/app.dart`, and wires the `deeplinkConfig` factory into `lib/main.dart`.
+
+### 3. Boot the provider
+
+The `DeeplinkServiceProvider` is automatically registered during install. On app boot, it:
+
+- Creates the configured driver (`app_links` by default)
+- Initializes the driver with your config
+- Listens for incoming deep links
+- Routes them through your registered handlers
+
+That's it — deep links now work across iOS and Android.
+
+---
 
 ## Configuration
 
-Configure your domain, scheme, and paths in `lib/config/deeplink.dart`:
+After running the install command, edit `lib/config/deeplink.dart`:
 
 ```dart
 Map<String, dynamic> get deeplinkConfig => {
@@ -39,22 +97,16 @@ Map<String, dynamic> get deeplinkConfig => {
     'driver': 'app_links',
     'domain': 'example.com',
     'scheme': 'https',
-
-    // iOS Configuration
     'ios': {
       'team_id': 'ABC123XYZ',
       'bundle_id': 'com.example.app',
     },
-
-    // Android Configuration
     'android': {
       'package_name': 'com.example.app',
       'sha256_fingerprints': [
-        'AA:BB:CC...',
+        'AA:BB:CC:...',
       ],
     },
-
-    // Paths to handle automatically
     'paths': [
       '/monitors/*',
       '/status-pages/*',
@@ -64,36 +116,76 @@ Map<String, dynamic> get deeplinkConfig => {
 };
 ```
 
-## Server-Side Configuration
+All values are read at runtime via `ConfigRepository` — no hardcoded strings scattered across your codebase.
 
-Universal Links and App Links require a file to be hosted on your web server.
+---
 
-Generate these files using the CLI:
+## Server-Side Setup
+
+Universal Links (iOS) and App Links (Android) require verification files hosted on your domain.
+
+Generate them with one command:
 
 ```bash
-dart run fluttersdk_magic_deeplink:generate --output ./public
+dart run magic_deeplink:generate --output ./public
 ```
 
-This will generate:
-- `apple-app-site-association` (iOS)
-- `assetlinks.json` (Android)
+This creates two files:
 
-Upload these to the root or `.well-known/` directory of your website.
+| File | Platform | Purpose |
+|------|----------|---------|
+| `apple-app-site-association` | iOS | Universal Links verification |
+| `assetlinks.json` | Android | App Links verification |
 
-## Usage
+Upload these to the root or `.well-known/` directory of your web server so that `https://example.com/.well-known/apple-app-site-association` and `https://example.com/.well-known/assetlinks.json` are publicly accessible.
 
-### Automatic Routing
+---
 
-If you use `RouteDeeplinkHandler` (enabled by default), paths defined in your config will automatically navigate to the corresponding Magic Route.
+## CLI Tools
 
-Example:
-- Config path: `/monitors/*`
-- Deep link: `https://example.com/monitors/123`
-- Magic Route: `MagicRoute.to('/monitors/123')`
+### `install`
 
-### Custom Handlers
+Scaffolds the deeplink configuration into your Magic project.
 
-You can register custom handlers for specific logic:
+```bash
+dart run magic_deeplink:install
+```
+
+**What it does:**
+
+- Generates `lib/config/deeplink.dart` config file
+- Injects `DeeplinkServiceProvider` into `lib/config/app.dart`
+- Injects `deeplinkConfig` factory into `lib/main.dart`
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--force` | `-f` | Overwrite existing configuration file |
+
+### `generate`
+
+Generates platform verification files from your config.
+
+```bash
+dart run magic_deeplink:generate --output ./public
+```
+
+Reads configuration from `lib/config/deeplink.dart` first. CLI flags override config file values.
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--output` | `-o` | `public` | Output directory for generated files |
+| `--root` | | `.` | Project root directory |
+| `--team-id` | | — | Apple Developer Team ID |
+| `--bundle-id` | | — | iOS app bundle identifier |
+| `--package-name` | | — | Android package name |
+| `--sha256-fingerprints` | | — | SHA-256 certificate fingerprints (multi) |
+| `--paths` | | `['/*']` | Paths to handle (multi) |
+
+---
+
+## Custom Handlers
+
+Register your own handlers for specific deep link patterns:
 
 ```dart
 class InviteHandler extends DeeplinkHandler {
@@ -114,8 +206,78 @@ class InviteHandler extends DeeplinkHandler {
 DeeplinkManager().registerHandler(InviteHandler());
 ```
 
-### Notification Integration
+Handlers follow the chain-of-responsibility pattern. The first handler where `canHandle` returns `true` processes the URI. Return `true` from `handle` to indicate success, `false` to pass to the next handler.
 
-The plugin automatically detects if `fluttersdk_magic_notifications` is present and sets up a handler for notification clicks.
+---
 
-To send a deep link via OneSignal, add the `url` (or `deep_link`) field to your notification payload.
+## Notification Integration
+
+If `magic_notifications` is installed and bound in the container, `magic_deeplink` automatically registers an `OneSignalDeeplinkHandler` that processes notification click actions containing deep link URLs.
+
+No extra configuration needed — the provider detects the binding at boot time and wires everything up.
+
+To send a deep link via OneSignal, add the `url` or `deep_link` field to your notification payload.
+
+---
+
+## Architecture
+
+```
+App launch → DeeplinkServiceProvider.boot()
+  → reads config via ConfigRepository
+  → creates AppLinksDriver
+  → driver.initialize(config)
+  → listens driver.onLink stream → manager.handleUri()
+  → first matching handler wins (canHandle → handle)
+  → delays initial link via Future.delayed(Duration.zero) for router readiness
+  → optional: OneSignal handler if magic_notifications bound
+```
+
+**Key patterns:**
+
+| Pattern | Implementation |
+|---------|---------------|
+| Singleton Manager | `DeeplinkManager` — central orchestrator |
+| Strategy (Driver) | `AppLinksDriver` implements `DeeplinkDriver` contract |
+| Chain of Responsibility | Handlers checked in order — first match wins |
+| Service Provider | Two-phase bootstrap: `register()` (sync) → `boot()` (async) |
+| IoC Container | All bindings via `app.singleton()` / `app.make()` |
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Installation](https://magic.fluttersdk.com/packages/deeplink/getting-started/installation) | Adding the package and running the installer |
+| [Configuration](https://magic.fluttersdk.com/packages/deeplink/getting-started/configuration) | Config file reference and options |
+| [Drivers](https://magic.fluttersdk.com/packages/deeplink/basics/drivers) | Driver contract and `AppLinksDriver` details |
+| [Handlers](https://magic.fluttersdk.com/packages/deeplink/basics/handlers) | Built-in handlers and writing custom ones |
+| [CLI Tools](https://magic.fluttersdk.com/packages/deeplink/basics/cli) | Install and generate command reference |
+| [Deeplink Manager](https://magic.fluttersdk.com/packages/deeplink/architecture/deeplink-manager) | Manager singleton and handler orchestration |
+| [Service Provider](https://magic.fluttersdk.com/packages/deeplink/architecture/service-provider) | Bootstrap lifecycle and IoC bindings |
+
+---
+
+## Contributing
+
+Contributions are welcome! Please see the [issues page](https://github.com/fluttersdk/magic-deeplink/issues) for open tasks or to report bugs.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Write tests following the [TDD flow](#) — red, green, refactor
+4. Ensure all checks pass: `flutter test`, `dart analyze`, `dart format .`
+5. Submit a pull request
+
+---
+
+## License
+
+Magic Deeplink is open-sourced software licensed under the [MIT License](LICENSE).
+
+---
+
+<p align="center">
+  Built with care by <a href="https://github.com/fluttersdk">FlutterSDK</a><br/>
+  <sub>If Magic Deeplink helps your project, consider giving it a <a href="https://github.com/fluttersdk/magic-deeplink">star on GitHub</a>.</sub>
+</p>

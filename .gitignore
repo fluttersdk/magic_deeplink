@@ -19,6 +19,9 @@ migrate_working_dir/
 # VS Code
 .vscode/
 
+# Test coverage
+coverage/
+
 # Flutter/Dart/Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id

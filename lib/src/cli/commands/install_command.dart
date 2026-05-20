@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:magic_cli/magic_cli.dart';
+import 'package:fluttersdk_artisan/artisan.dart';
 
 /// CLI command to install the deep link configuration file into the project.
 ///
@@ -12,16 +12,20 @@ import 'package:magic_cli/magic_cli.dart';
 /// ## Usage
 ///
 /// ```bash
-/// dart run magic_deeplink install
-/// dart run magic_deeplink install --force
+/// dart run artisan deeplink:install
+/// dart run artisan deeplink:install --force
 /// ```
-class InstallCommand extends Command {
+class InstallCommand extends ArtisanCommand {
   @override
-  String get name => 'install';
+  String get signature =>
+      'deeplink:install {--force : Overwrite existing configuration file.}';
 
   @override
   String get description =>
       'Install deep link configuration and inject into Magic app.';
+
+  @override
+  CommandBoot get boot => CommandBoot.none;
 
   /// Return the Flutter project root directory.
   ///
@@ -35,61 +39,54 @@ class InstallCommand extends Command {
   ///
   /// Overridable in tests.
   List<String> getStubSearchPaths() {
-    return [
-      _resolvePluginStubsDir(),
-      '${Directory.current.path}/assets/stubs',
-    ];
+    return [_resolvePluginStubsDir(), '${Directory.current.path}/assets/stubs'];
   }
 
   @override
-  void configure(ArgParser parser) {
-    parser.addFlag(
-      'force',
-      abbr: 'f',
-      help: 'Overwrite existing configuration file.',
-      defaultsTo: false,
-      negatable: false,
-    );
-  }
-
-  @override
-  Future<void> handle() async {
+  Future<int> handle(ArtisanContext ctx) async {
     // 1. Read CLI flags before doing any file work.
-    final force = arguments['force'] as bool? ?? false;
+    final force = ctx.input.option('force') as bool? ?? false;
     final root = getProjectRoot();
     final appPath = '$root/lib/config/app.dart';
     final mainPath = '$root/lib/main.dart';
     final configPath = '$root/lib/config/deeplink.dart';
 
-    info('Installing deep link configuration...');
+    ctx.output.info('Installing deep link configuration...');
 
-    // 2. Validate Magic is installed
+    // 2. Validate Magic is installed.
     if (!FileHelper.fileExists(appPath)) {
-      throw Exception(
-          'Magic Framework not detected. Run `magic install` first.');
+      ctx.output.error(
+        'Magic Framework not detected. Run `magic install` first.',
+      );
+      return 1;
     }
 
-    // 3. Write config file
+    // 3. Write config file.
     if (FileHelper.fileExists(configPath) && !force) {
-      warn('Configuration file already exists. Use --force to overwrite.');
+      ctx.output.warning(
+        'Configuration file already exists. Use --force to overwrite.',
+      );
     } else {
-      final configContent = StubLoader.load('install/deeplink_config',
-          searchPaths: getStubSearchPaths());
+      final configContent = StubLoader.load(
+        'install/deeplink_config',
+        searchPaths: getStubSearchPaths(),
+      );
       FileHelper.writeFile(configPath, configContent);
-      success('Created lib/config/deeplink.dart');
+      ctx.output.success('Created lib/config/deeplink.dart');
     }
 
-    // 4. Inject into app.dart
-    _injectIntoApp(appPath);
+    // 4. Inject into app.dart.
+    _injectIntoApp(ctx, appPath);
 
-    // 5. Inject into main.dart
-    _injectIntoMain(mainPath);
+    // 5. Inject into main.dart.
+    _injectIntoMain(ctx, mainPath);
 
-    success('Deeplink configuration installed successfully!');
+    ctx.output.success('Deeplink configuration installed successfully!');
+    return 0;
   }
 
-  /// Injects provider and imports into lib/config/app.dart
-  void _injectIntoApp(String appPath) {
+  /// Injects provider and imports into lib/config/app.dart.
+  void _injectIntoApp(ArtisanContext ctx, String appPath) {
     ConfigEditor.addImportToFile(
       filePath: appPath,
       importStatement: "import 'package:magic_deeplink/magic_deeplink.dart';",
@@ -102,12 +99,14 @@ class InstallCommand extends Command {
         pattern: RegExp(r'\s+\]\,\s*\},?'),
         code: '      (app) => DeeplinkServiceProvider(app),\n',
       );
-      success('Injected DeeplinkServiceProvider into lib/config/app.dart');
+      ctx.output.success(
+        'Injected DeeplinkServiceProvider into lib/config/app.dart',
+      );
     }
   }
 
-  /// Injects configFactory and imports into lib/main.dart
-  void _injectIntoMain(String mainPath) {
+  /// Injects configFactory and imports into lib/main.dart.
+  void _injectIntoMain(ArtisanContext ctx, String mainPath) {
     if (!FileHelper.fileExists(mainPath)) return;
 
     ConfigEditor.addImportToFile(
@@ -122,11 +121,11 @@ class InstallCommand extends Command {
         pattern: RegExp(r'\s+\]\,\s*\);'),
         code: '      () => deeplinkConfig,\n',
       );
-      success('Injected deeplinkConfig into lib/main.dart');
+      ctx.output.success('Injected deeplinkConfig into lib/main.dart');
     }
   }
 
-  /// Tries to resolve the package assets directory dynamically using package_config.json
+  /// Tries to resolve the package assets directory dynamically using package_config.json.
   String _resolvePluginStubsDir() {
     final packageConfigPath =
         '${Directory.current.path}/.dart_tool/package_config.json';
@@ -143,12 +142,9 @@ class InstallCommand extends Command {
               parsedPath = Uri.parse(rootUri).toFilePath();
             } else if (rootUri.startsWith('../')) {
               parsedPath = Uri.parse(rootUri).toFilePath();
-              parsedPath = File(packageConfigPath)
-                  .parent
-                  .parent
-                  .uri
-                  .resolve(rootUri)
-                  .toFilePath();
+              parsedPath = File(
+                packageConfigPath,
+              ).parent.parent.uri.resolve(rootUri).toFilePath();
             } else {
               parsedPath = rootUri;
             }
@@ -156,7 +152,7 @@ class InstallCommand extends Command {
           }
         }
       } catch (_) {
-        // Fallback below
+        // Fallback below.
       }
     }
     return '${Directory.current.path}/assets/stubs';

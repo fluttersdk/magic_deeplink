@@ -17,3 +17,6 @@ export 'src/providers/deeplink_service_provider.dart';
 
 // Exceptions
 export 'src/exceptions/deeplink_exception.dart';
+
+// CLI
+export 'src/cli/deeplink_artisan_provider.dart';

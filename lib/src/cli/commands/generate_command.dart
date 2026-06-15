@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:magic_cli/magic_cli.dart';
+import 'package:fluttersdk_artisan/artisan.dart';
 
 /// CLI command to generate deep link server-side configuration files.
 ///
@@ -11,20 +11,28 @@ import 'package:magic_cli/magic_cli.dart';
 /// ## Usage
 ///
 /// ```bash
-/// dart run magic_deeplink generate \
+/// dart run artisan deeplink:generate \
 ///   --team-id ABCDE12345 \
 ///   --bundle-id your.package.name \
 ///   --package-name your.package.name \
 ///   --sha256-fingerprints AA:BB:CC:... \
 ///   --output public
 /// ```
-class GenerateCommand extends Command {
+class GenerateCommand extends ArtisanCommand {
   @override
-  String get name => 'generate';
+  String get signature => 'deeplink:generate '
+      '{--output=public : Output directory for generated files (relative to project root).} '
+      '{--root=. : Project root directory (defaults to current working directory).} '
+      '{--team-id= : Apple Developer Team ID (for AASA).} '
+      '{--bundle-id= : iOS app bundle identifier.} '
+      '{--package-name= : Android package name.}';
 
   @override
   String get description =>
       'Generate deep link configuration files (apple-app-site-association, assetlinks.json).';
+
+  @override
+  CommandBoot get boot => CommandBoot.none;
 
   /// Return the Flutter project root directory.
   ///
@@ -35,38 +43,11 @@ class GenerateCommand extends Command {
 
   @override
   void configure(ArgParser parser) {
-    parser.addOption(
-      'output',
-      abbr: 'o',
-      defaultsTo: 'public',
-      help: 'Output directory for generated files (relative to project root).',
-    );
+    // 1. Let the signature DSL register every single-value option/flag.
+    super.configure(parser);
 
-    parser.addOption(
-      'root',
-      defaultsTo: '.',
-      help: 'Project root directory (defaults to current working directory).',
-    );
-
-    parser.addOption(
-      'team-id',
-      help: 'Apple Developer Team ID (for AASA).',
-    );
-
-    parser.addOption(
-      'bundle-id',
-      help: 'iOS app bundle identifier.',
-    );
-
-    parser.addOption(
-      'package-name',
-      help: 'Android package name.',
-    );
-
-    parser.addMultiOption(
-      'sha256-fingerprints',
-      help: 'SHA-256 fingerprints.',
-    );
+    // 2. Register multi-value options the DSL cannot model.
+    parser.addMultiOption('sha256-fingerprints', help: 'SHA-256 fingerprints.');
 
     parser.addMultiOption(
       'paths',
@@ -76,16 +57,16 @@ class GenerateCommand extends Command {
   }
 
   @override
-  Future<void> handle() async {
+  Future<int> handle(ArtisanContext ctx) async {
     // 1. Read all CLI option values — no defaults live in this method.
-    final root = arguments['root'] as String? ?? '.';
-    final outputDir = arguments['output'] as String? ?? 'public';
-    String teamId = arguments['team-id'] as String? ?? '';
-    String bundleId = arguments['bundle-id'] as String? ?? '';
-    String packageName = arguments['package-name'] as String? ?? '';
+    final root = ctx.input.option('root') as String? ?? '.';
+    final outputDir = ctx.input.option('output') as String? ?? 'public';
+    String teamId = ctx.input.option('team-id') as String? ?? '';
+    String bundleId = ctx.input.option('bundle-id') as String? ?? '';
+    String packageName = ctx.input.option('package-name') as String? ?? '';
     List<String> fingerprints =
-        arguments['sha256-fingerprints'] as List<String>? ?? [];
-    List<String> paths = arguments['paths'] as List<String>? ?? [];
+        ctx.input.option('sha256-fingerprints') as List<String>? ?? [];
+    List<String> paths = ctx.input.option('paths') as List<String>? ?? [];
 
     // 2. Resolve paths for the operation.
     final projectRoot = getProjectRoot();
@@ -122,11 +103,11 @@ class GenerateCommand extends Command {
       }
     }
 
-    info('Generating deep link files in $outputPath...');
+    ctx.output.info('Generating deep link files in $outputPath...');
 
     // 5. Detect iOS platform via PlatformHelper — inform user about AASA placement.
     if (PlatformHelper.hasPlatform(effectiveRoot, 'ios')) {
-      info(
+      ctx.output.info(
         'iOS platform detected — upload apple-app-site-association to your web server root.',
       );
     }
@@ -135,9 +116,9 @@ class GenerateCommand extends Command {
     if (teamId.isNotEmpty && bundleId.isNotEmpty) {
       final aasaData = buildAppleAppSiteAssociation(teamId, bundleId, paths);
       JsonEditor.writeJson('$outputPath/apple-app-site-association', aasaData);
-      success('Created $outputPath/apple-app-site-association');
+      ctx.output.success('Created $outputPath/apple-app-site-association');
     } else {
-      warn(
+      ctx.output.warning(
         'Skipping apple-app-site-association — provide --team-id and --bundle-id.',
       );
     }
@@ -146,12 +127,14 @@ class GenerateCommand extends Command {
     if (packageName.isNotEmpty && fingerprints.isNotEmpty) {
       final assetLinksData = buildAssetLinks(packageName, fingerprints);
       JsonEditor.writeJson('$outputPath/assetlinks.json', assetLinksData);
-      success('Created $outputPath/assetlinks.json');
+      ctx.output.success('Created $outputPath/assetlinks.json');
     } else {
-      warn(
+      ctx.output.warning(
         'Skipping assetlinks.json — provide --package-name and --sha256-fingerprints.',
       );
     }
+
+    return 0;
   }
 
   // -------------------------------------------------------------------------
@@ -170,31 +153,37 @@ class GenerateCommand extends Command {
       config['teamId'] = teamIdMatch.group(1);
     }
 
-    final bundleIdMatch =
-        RegExp(r"'bundle_id':\s*'([^']+)'").firstMatch(content);
+    final bundleIdMatch = RegExp(
+      r"'bundle_id':\s*'([^']+)'",
+    ).firstMatch(content);
     if (bundleIdMatch != null) {
       config['bundleId'] = bundleIdMatch.group(1);
     }
 
-    final packageNameMatch =
-        RegExp(r"'package_name':\s*'([^']+)'").firstMatch(content);
+    final packageNameMatch = RegExp(
+      r"'package_name':\s*'([^']+)'",
+    ).firstMatch(content);
     if (packageNameMatch != null) {
       config['packageName'] = packageNameMatch.group(1);
     }
 
-    final fingerprintsMatch =
-        RegExp(r"'sha256_fingerprints':\s*\[(.*?)\]", dotAll: true)
-            .firstMatch(content);
+    final fingerprintsMatch = RegExp(
+      r"'sha256_fingerprints':\s*\[(.*?)\]",
+      dotAll: true,
+    ).firstMatch(content);
     if (fingerprintsMatch != null) {
       final fingerprintsContent = fingerprintsMatch.group(1) ?? '';
-      final fingerprintMatches =
-          RegExp(r"'([^']+)'").allMatches(fingerprintsContent);
+      final fingerprintMatches = RegExp(
+        r"'([^']+)'",
+      ).allMatches(fingerprintsContent);
       config['fingerprints'] =
           fingerprintMatches.map((m) => m.group(1)!).toList();
     }
 
-    final pathsMatch =
-        RegExp(r"'paths':\s*\[(.*?)\]", dotAll: true).firstMatch(content);
+    final pathsMatch = RegExp(
+      r"'paths':\s*\[(.*?)\]",
+      dotAll: true,
+    ).firstMatch(content);
     if (pathsMatch != null) {
       final pathsContent = pathsMatch.group(1) ?? '';
       final pathMatches = RegExp(r"'([^']+)'").allMatches(pathsContent);
@@ -219,10 +208,7 @@ class GenerateCommand extends Command {
       'applinks': {
         'apps': <dynamic>[],
         'details': [
-          {
-            'appID': '$teamId.$bundleId',
-            'paths': paths,
-          },
+          {'appID': '$teamId.$bundleId', 'paths': paths},
         ],
       },
     };
@@ -236,15 +222,10 @@ class GenerateCommand extends Command {
   /// @param packageName   Android app package name.
   /// @param fingerprints  List of SHA-256 certificate fingerprints.
   /// @return A [List<dynamic>] ready for JSON serialisation.
-  List<dynamic> buildAssetLinks(
-    String packageName,
-    List<String> fingerprints,
-  ) {
+  List<dynamic> buildAssetLinks(String packageName, List<String> fingerprints) {
     return fingerprints.map((fingerprint) {
       return {
-        'relation': [
-          'delegate_permission/common.handle_all_urls',
-        ],
+        'relation': ['delegate_permission/common.handle_all_urls'],
         'target': {
           'namespace': 'android_app',
           'package_name': packageName,

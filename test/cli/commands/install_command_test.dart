@@ -1,248 +1,295 @@
 import 'dart:io';
 
+import 'package:fluttersdk_artisan/artisan.dart';
 import 'package:magic_deeplink/src/cli/commands/install_command.dart';
 import 'package:test/test.dart';
 
-// A test subclass that overrides getProjectRoot() and stub paths
-class TestInstallCommand extends InstallCommand {
-  final String root;
-  final List<String>? stubPaths;
+// ---------------------------------------------------------------------------
+// Test subclass that pins the manifest path + buildContext to a real tempDir.
+// ---------------------------------------------------------------------------
 
-  TestInstallCommand(this.root, [this.stubPaths]);
+/// Pins [resolveManifestPath] to the package-local install.yaml and
+/// [buildContext] to a real-FS context rooted at [projectRoot].
+///
+/// This avoids [Isolate.resolvePackageUri] lookups in tests and ensures the
+/// ConfigEditor helpers (which bypass VirtualFs) write to the temp directory.
+class _TestableInstallCommand extends InstallCommand {
+  _TestableInstallCommand({
+    required this.manifestPath,
+    required this.projectRoot,
+  });
+
+  final String manifestPath;
+  final String projectRoot;
 
   @override
-  String getProjectRoot() => root;
+  Future<String?> resolveManifestPath() async => manifestPath;
 
   @override
-  List<String> getStubSearchPaths() => stubPaths ?? super.getStubSearchPaths();
+  InstallContext buildContext(ArtisanContext ctx) =>
+      InstallContext.real(ctx, projectRoot: projectRoot);
 }
 
-void main() {
-  group('InstallCommand', () {
-    late Directory tempDir;
-    late TestInstallCommand command;
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-    // Point directly to real stubs relative to the test location
-    final stubsPath = Directory('${Directory.current.path}/assets/stubs').path;
+/// Returns the absolute path to the package-root install.yaml.
+String get _packageManifest => '${Directory.current.path}/install.yaml';
 
-    void setupAppFile() {
-      final appFile = File('${tempDir.path}/lib/config/app.dart');
-      appFile.createSync(recursive: true);
-      appFile.writeAsStringSync('''
+/// Returns the absolute path to the magic_deeplink package root.
+String get _pluginRoot => Directory.current.path;
+
+/// Builds an [ArtisanContext] for the given [flags] against the command's
+/// parsed signature.
+ArtisanContext _ctx(
+  InstallCommand cmd, {
+  Map<String, dynamic> flags = const <String, dynamic>{},
+}) {
+  final defaults = <String, dynamic>{
+    'force': false,
+    'dry-run': false,
+    'non-interactive': true,
+    'no-bootstrap': false,
+  };
+  return ArtisanContext.bare(
+    MapInput({...defaults, ...flags}, signature: cmd.parsedSignature),
+    BufferedOutput(),
+  );
+}
+
+/// Seeds a minimal but valid Magic project scaffold into [root]:
+/// - `.dart_tool/package_config.json` pointing at the real magic_deeplink stubs
+/// - `lib/config/app.dart` with a providers list
+/// - `lib/main.dart` with a configFactories list
+void _seedProject(String root) {
+  // Seed package_config.json so ManifestInstaller._resolvePluginStubsDir can
+  // locate magic_deeplink's assets/stubs/ directory. The rootUri uses an
+  // absolute file:// URI to avoid path-relative resolution ambiguity.
+  File('$root/.dart_tool/package_config.json')
+    ..createSync(recursive: true)
+    ..writeAsStringSync(
+      '{"configVersion":2,"packages":['
+      '{"name":"magic_deeplink","rootUri":"file://$_pluginRoot/","packageUri":"lib/"}'
+      ']}',
+    );
+
+  File('$root/lib/config/app.dart')
+    ..createSync(recursive: true)
+    ..writeAsStringSync('''
 import 'package:magic/magic.dart';
-
-import '../app/providers/app_service_provider.dart';
-import '../app/providers/route_service_provider.dart';
 
 Map<String, dynamic> get appConfig => {
   'app': {
-    'name': env('APP_NAME', 'Test App'),
     'providers': [
-      (app) => RouteServiceProvider(app),
       (app) => AppServiceProvider(app),
     ],
   },
 };
 ''');
-    }
 
-    void setupMainFile() {
-      final mainFile = File('${tempDir.path}/lib/main.dart');
-      mainFile.createSync(recursive: true);
-      mainFile.writeAsStringSync('''
+  File('$root/lib/main.dart')
+    ..createSync(recursive: true)
+    ..writeAsStringSync('''
 import 'package:flutter/material.dart';
 import 'package:magic/magic.dart';
 
 import 'config/app.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
   await Magic.init(
     configFactories: [
       () => appConfig,
     ],
   );
-
-  runApp(const MyApp());
 }
 ''');
-    }
+}
 
-    setUp(() {
-      tempDir = Directory.systemTemp.createTempSync('install_command_test_');
-      command = TestInstallCommand(tempDir.path, [stubsPath]);
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+void main() {
+  late Directory tempDir;
+  late _TestableInstallCommand command;
+
+  setUp(() {
+    tempDir = Directory.systemTemp.createTempSync('deeplink_install_test_');
+    command = _TestableInstallCommand(
+      manifestPath: _packageManifest,
+      projectRoot: tempDir.path,
+    );
+  });
+
+  tearDown(() {
+    if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Group 1: command metadata
+  // -------------------------------------------------------------------------
+
+  group('InstallCommand, metadata', () {
+    test('extends ArtisanInstallCommand', () {
+      expect(command, isA<ArtisanInstallCommand>());
     });
 
-    tearDown(() {
-      tempDir.deleteSync(recursive: true);
+    test('signature starts with deeplink:install', () {
+      expect(command.signature, startsWith('deeplink:install'));
     });
 
-    test('name is install', () {
-      expect(command.name, 'install');
-    });
-
-    test('description contains deep link or configuration', () {
+    test('includes the 4 base flags from ArtisanInstallCommand', () {
+      final optionNames =
+          command.parsedSignature!.options.map((o) => o.name).toSet();
       expect(
-        command.description.toLowerCase(),
-        anyOf(
-          contains('deep link'),
-          contains('configuration'),
-        ),
+        optionNames,
+        containsAll(
+            <String>['force', 'dry-run', 'non-interactive', 'no-bootstrap']),
       );
     });
 
-    test('configure adds --force flag with abbr f', () {
-      expect(() => command.runWith(['--force']),
-          throwsException); // throws since app.dart doesn't exist yet
+    test('boot is CommandBoot.none', () {
+      expect(command.boot, CommandBoot.none);
     });
+  });
 
-    test('--force flag abbr is f', () {
-      final cmd2 = TestInstallCommand(tempDir.path, [stubsPath]);
-      expect(() => cmd2.runWith(['-f']), throwsException);
-    });
+  // -------------------------------------------------------------------------
+  // Group 2: manifest-driven install
+  // -------------------------------------------------------------------------
 
-    test('errors when Magic not installed (no lib/config/app.dart)', () async {
-      expect(
-        () => command.runWith([]),
-        throwsA(
-          isA<Exception>().having(
-            (e) => e.toString(),
-            'message',
-            contains('Magic Framework not detected'),
-          ),
-        ),
-      );
-    });
+  group('InstallCommand, manifest-driven install', () {
+    test('publishes lib/config/deeplink.dart from stub', () async {
+      _seedProject(tempDir.path);
 
-    test('handle creates lib/config/deeplink.dart', () async {
-      setupAppFile();
-      setupMainFile();
+      final ctx = _ctx(command);
+      final exitCode = await command.handle(ctx);
 
-      await command.runWith([]);
-
+      expect(exitCode, 0);
       final configFile = File('${tempDir.path}/lib/config/deeplink.dart');
       expect(configFile.existsSync(), isTrue);
-
       final content = configFile.readAsStringSync();
       expect(content, contains('deeplinkConfig'));
       expect(content, contains("'deeplink':"));
     });
 
-    test('handle skips write when file exists and no --force', () async {
-      setupAppFile();
-      setupMainFile();
+    test('injects DeeplinkServiceProvider into app.dart', () async {
+      _seedProject(tempDir.path);
 
-      final configFile = File('${tempDir.path}/lib/config/deeplink.dart');
-      configFile.createSync(recursive: true);
-      configFile.writeAsStringSync('// original content');
+      final ctx = _ctx(command);
+      await command.handle(ctx);
 
-      await command.runWith([]);
-
-      expect(configFile.readAsStringSync(), '// original content');
+      final appContent =
+          File('${tempDir.path}/lib/config/app.dart').readAsStringSync();
+      expect(appContent, contains('DeeplinkServiceProvider'));
     });
 
-    test('handle overwrites when --force is set', () async {
-      setupAppFile();
-      setupMainFile();
+    test('injects deeplinkConfig factory into main.dart', () async {
+      _seedProject(tempDir.path);
 
-      final configFile = File('${tempDir.path}/lib/config/deeplink.dart');
-      configFile.createSync(recursive: true);
-      configFile.writeAsStringSync('// original content');
+      final ctx = _ctx(command);
+      await command.handle(ctx);
 
-      await command.runWith(['--force']);
+      final mainContent =
+          File('${tempDir.path}/lib/main.dart').readAsStringSync();
+      expect(mainContent, contains('deeplinkConfig'));
+    });
 
-      final content = configFile.readAsStringSync();
+    test('returns exit code 0 on success', () async {
+      _seedProject(tempDir.path);
+
+      final ctx = _ctx(command);
+      final exitCode = await command.handle(ctx);
+
+      expect(exitCode, 0);
+    });
+
+    test('skips config write when file exists and --force not set', () async {
+      _seedProject(tempDir.path);
+      final configFile = File('${tempDir.path}/lib/config/deeplink.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('// original content');
+
+      final ctx = _ctx(command);
+      await command.handle(ctx);
+
+      expect(configFile.readAsStringSync(), contains('// original content'));
+    });
+
+    test('overwrites config when --force is set', () async {
+      _seedProject(tempDir.path);
+      File('${tempDir.path}/lib/config/deeplink.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('// original content');
+
+      final ctx = _ctx(command, flags: {'force': true});
+      await command.handle(ctx);
+
+      final content =
+          File('${tempDir.path}/lib/config/deeplink.dart').readAsStringSync();
       expect(content, contains('deeplinkConfig'));
       expect(content, isNot(contains('// original content')));
     });
+  });
 
-    test('handle creates parent directories', () async {
-      setupAppFile();
-      setupMainFile();
+  // -------------------------------------------------------------------------
+  // Group 3: dry-run
+  // -------------------------------------------------------------------------
 
-      expect(
-        Directory('${tempDir.path}/lib/config/deeplink.dart').existsSync(),
-        isFalse,
-      );
+  group('InstallCommand, dry-run', () {
+    test('dry-run does not write config file', () async {
+      _seedProject(tempDir.path);
 
-      await command.runWith([]);
+      final ctx = _ctx(command, flags: {'dry-run': true});
+      final exitCode = await command.handle(ctx);
 
+      expect(exitCode, 0);
       expect(
         File('${tempDir.path}/lib/config/deeplink.dart').existsSync(),
-        isTrue,
+        isFalse,
       );
     });
+  });
 
-    test('getProjectRoot is overridable', () {
-      expect(command.getProjectRoot(), tempDir.path);
-    });
+  // -------------------------------------------------------------------------
+  // Group 4: idempotency
+  // -------------------------------------------------------------------------
 
-    test('injects import into app.dart', () async {
-      setupAppFile();
-      setupMainFile();
+  group('InstallCommand, idempotency', () {
+    test('running twice does not duplicate provider injection', () async {
+      _seedProject(tempDir.path);
 
-      await command.runWith([]);
-
-      final appContent =
-          File('${tempDir.path}/lib/config/app.dart').readAsStringSync();
-      expect(appContent,
-          contains("import 'package:magic_deeplink/magic_deeplink.dart';"));
-    });
-
-    test('injects provider into app.dart providers list', () async {
-      setupAppFile();
-      setupMainFile();
-
-      await command.runWith([]);
+      await command.handle(_ctx(command));
+      // Construct a fresh command instance for the second run (one-shot guard).
+      final command2 = _TestableInstallCommand(
+        manifestPath: _packageManifest,
+        projectRoot: tempDir.path,
+      );
+      await command2.handle(_ctx(command2));
 
       final appContent =
           File('${tempDir.path}/lib/config/app.dart').readAsStringSync();
-      expect(appContent, contains('(app) => DeeplinkServiceProvider(app),'));
-    });
-
-    test('injects import into main.dart', () async {
-      setupAppFile();
-      setupMainFile();
-
-      await command.runWith([]);
-
-      final mainContent =
-          File('${tempDir.path}/lib/main.dart').readAsStringSync();
-      expect(mainContent, contains("import 'config/deeplink.dart';"));
-    });
-
-    test('injects configFactory into main.dart', () async {
-      setupAppFile();
-      setupMainFile();
-
-      await command.runWith([]);
-
-      final mainContent =
-          File('${tempDir.path}/lib/main.dart').readAsStringSync();
-      expect(mainContent, contains('() => deeplinkConfig,'));
-    });
-
-    test('idempotent — running twice does not duplicate injections', () async {
-      setupAppFile();
-      setupMainFile();
-
-      await command.runWith([]);
-      await command.runWith([]);
-
-      final appContent =
-          File('${tempDir.path}/lib/config/app.dart').readAsStringSync();
-      final mainContent =
-          File('${tempDir.path}/lib/main.dart').readAsStringSync();
-
-      final providerMatches =
-          RegExp(r'DeeplinkServiceProvider').allMatches(appContent);
-      expect(providerMatches.length, 1,
+      final matches = RegExp('DeeplinkServiceProvider').allMatches(appContent);
+      expect(matches.length, 1,
           reason: 'Provider should only be injected once');
+    });
 
-      final factoryMatches =
-          RegExp(r'\(\) => deeplinkConfig').allMatches(mainContent);
-      expect(factoryMatches.length, 1,
+    test('running twice does not duplicate config factory injection', () async {
+      _seedProject(tempDir.path);
+
+      await command.handle(_ctx(command));
+      final command2 = _TestableInstallCommand(
+        manifestPath: _packageManifest,
+        projectRoot: tempDir.path,
+      );
+      await command2.handle(_ctx(command2));
+
+      final mainContent =
+          File('${tempDir.path}/lib/main.dart').readAsStringSync();
+      // deeplinkConfig appears once in configFactories injection; the
+      // deeplink.dart file itself is written to lib/config/ not main.dart.
+      final matches = RegExp(r'deeplinkConfig').allMatches(mainContent);
+      expect(matches.length, 1,
           reason: 'Config factory should only be injected once');
     });
   });

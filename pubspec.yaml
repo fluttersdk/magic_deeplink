@@ -21,13 +21,9 @@ dependencies:
   flutter:
     sdk: flutter
   magic: ^1.0.0-alpha.3
-  fluttersdk_artisan: ^1.0.0-alpha.1
+  fluttersdk_artisan: ^0.0.7
   app_links: ^7.0.0
   args: ^2.7.0
-
-dependency_overrides:
-  fluttersdk_artisan:
-    path: ../fluttersdk_artisan
 
 dev_dependencies:
   flutter_test:

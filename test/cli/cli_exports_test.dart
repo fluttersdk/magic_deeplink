@@ -19,9 +19,5 @@ void main() {
       final command = GenerateCommand();
       expect(command, isNotNull);
     });
-    test('Kernel is accessible via barrel (re-exported from magic_cli)', () {
-      final kernel = Kernel();
-      expect(kernel, isNotNull);
-    });
   });
 }

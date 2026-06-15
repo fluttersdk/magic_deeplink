@@ -68,7 +68,7 @@ dependencies:
 ### 2. Install configuration
 
 ```bash
-dart run magic_deeplink:install
+dart run <app>:artisan deeplink:install
 ```
 
 This generates `lib/config/deeplink.dart`, injects `DeeplinkServiceProvider` into `lib/config/app.dart`, and wires the `deeplinkConfig` factory into `lib/main.dart`.
@@ -127,7 +127,7 @@ Universal Links (iOS) and App Links (Android) require verification files hosted 
 Generate them with one command:
 
 ```bash
-dart run magic_deeplink:generate --output ./public
+dart run <app>:artisan deeplink:generate --output ./public
 ```
 
 This creates two files:
@@ -148,7 +148,7 @@ Upload these to the root or `.well-known/` directory of your web server so that 
 Scaffolds the deeplink configuration into your Magic project.
 
 ```bash
-dart run magic_deeplink:install
+dart run <app>:artisan deeplink:install
 ```
 
 **What it does:**
@@ -166,7 +166,7 @@ dart run magic_deeplink:install
 Generates platform verification files from your config.
 
 ```bash
-dart run magic_deeplink:generate --output ./public
+dart run <app>:artisan deeplink:generate --output ./public
 ```
 
 Reads configuration from `lib/config/deeplink.dart` first. CLI flags override config file values.

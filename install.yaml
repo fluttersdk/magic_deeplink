@@ -1,36 +1,33 @@
 # magic_deeplink install manifest (PluginInstaller DSL schema v1).
 #
-# Deeplink is a Magic-side plugin: install registers DeeplinkArtisanProvider
-# into the consumer's lib/app/_plugins.g.dart codegen barrel (via the artisan
-# manifest installer's _registerArtisanProvider step) AND injects
-# DeeplinkServiceProvider into lib/config/app.dart's providers list so the
-# Magic IoC container resolves the runtime Deeplink facade.
+# Deeplink is a Magic-side plugin: install publishes lib/config/deeplink.dart
+# from the bundled stub, registers DeeplinkServiceProvider into the consumer's
+# lib/config/app.dart providers list, and injects the deeplinkConfig factory
+# into lib/main.dart so the Magic IoC container resolves the runtime Deeplink
+# facade.
 #
-# No stub files are published: deeplink handlers are scaffolded on demand
-# by `dart run artisan deeplink:generate`, not at install time.
+# No handler stubs are published at install time: deeplink handlers are
+# scaffolded on demand by `dart run artisan deeplink:generate`.
 #
 # See doc/install_yaml_schema.md (in fluttersdk_artisan) for the full schema.
 
 plugin_name: magic_deeplink
 
-publish: {}
+publish:
+  install/deeplink_config: lib/config/deeplink.dart
 
 magic:
   provider: DeeplinkServiceProvider
+  config_factory: deeplinkConfig
 
 post_install:
   message: |
-    magic_deeplink plugin:installed. Bootstrap workflow:
+    magic_deeplink installed. Bootstrap workflow:
 
-    1. Verify the IoC wiring (auto-injected by `magic:install`):
+    1. Review lib/config/deeplink.dart and fill in your domain, team_id,
+       bundle_id, package_name, and sha256_fingerprints.
 
-         lib/config/app.dart:
-           providers: [
-             ...,
-             (app) => DeeplinkServiceProvider(app),
-           ],
-
-    2. Register deeplink handlers in a ServiceProvider's boot() body:
+    2. Register deeplink handlers in a ServiceProvider boot() body:
 
          Deeplink.register('/users/:id', UserDeeplinkHandler.new);
          Deeplink.register('/orders/:id', OrderDeeplinkHandler.new);

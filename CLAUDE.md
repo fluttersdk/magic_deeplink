@@ -6,13 +6,27 @@ Flutter deep linking plugin for the Magic Framework. Universal Links (iOS) + App
 
 ## Commands
 
+**Host-dispatched via artisan.** Add `DeeplinkArtisanProvider` to your app's artisan providers:
+
+```dart
+// lib/config/artisan.dart
+import 'package:magic_deeplink/src/cli/deeplink_artisan_provider.dart';
+
+List<ArtisanServiceProvider> get artisanProviders => [
+  DeeplinkArtisanProvider(),
+  // ... other providers
+];
+```
+
+Then run:
+
 | Command | Description |
 |---------|-------------|
 | `flutter test --coverage` | Run all tests with coverage |
 | `flutter analyze --no-fatal-infos` | Static analysis |
 | `dart format .` | Format all code |
-| `dart run magic_deeplink:install` | Generate `lib/config/deeplink.dart` in consumer project |
-| `dart run magic_deeplink:generate --output ./public` | Generate apple-app-site-association & assetlinks.json |
+| `dart run <app>:artisan deeplink:install` | Generate `lib/config/deeplink.dart` in consumer project |
+| `dart run <app>:artisan deeplink:generate --output ./public` | Generate apple-app-site-association & assetlinks.json |
 
 ## Architecture
 
@@ -27,11 +41,17 @@ lib/
     ├── handlers/              # URI handlers (RouteDeeplinkHandler, OneSignalDeeplinkHandler)
     ├── providers/             # DeeplinkServiceProvider (register + boot)
     ├── exceptions/            # DeeplinkException
-    └── cli/                   # Install + Generate commands (magic_cli integration)
-bin/
-└── magic_deeplink.dart        # CLI entry point — registers commands with Kernel
+    └── cli/                   # Install + Generate commands
+        ├── deeplink_artisan_provider.dart  # ArtisanServiceProvider (no bin entrypoint)
+        ├── commands/
+        │   ├── install_command.dart        # extends ArtisanInstallCommand, driven by install.yaml
+        │   └── generate_command.dart       # extends ArtisanCommand
+        └── cli.dart                        # Barrel export (provider + commands)
+install.yaml                   # Plugin manifest: config publish, provider/factory injection
 assets/stubs/                  # Stub templates for code generation
 ```
+
+**CLI architecture**: Commands are registered via `DeeplinkArtisanProvider.commands()` (extends `ArtisanServiceProvider`). No bin/ entrypoint — the host app's `artisan.dart` CLI dispatch handles command routing. The `InstallCommand` extends `ArtisanInstallCommand` and is manifest-driven: `install.yaml` specifies what config files to publish and which service provider to inject; the command executes the manifest through the artisan transactional installer.
 
 **Data flow:** App launch → `DeeplinkServiceProvider.boot()` → creates driver → listens `onLink` stream → `manager.handleUri()` → first matching handler wins
 

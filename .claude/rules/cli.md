@@ -1,18 +1,22 @@
 ---
-path: "{lib/src/cli/**/*.dart,bin/**/*.dart}"
+path: "{lib/src/cli/**/*.dart}"
 ---
 
 # CLI Domain
 
-- Commands extend `Command` from `magic_cli` — implement `name`, `description`, `configure(ArgParser)`, `handle()`
-- `configure()` registers flags/options via `ArgParser` — `addFlag()` for booleans, `addOption()` for strings, `addMultiOption()` for lists
-- `handle()` is `Future<void>` — read args from `arguments['key']`, cast to expected type
-- Entry point (`bin/magic_deeplink.dart`): create `Kernel()`, `registerMany([commands])`, `await kernel.handle(args)`
-- CLI barrel (`lib/src/cli/cli.dart`): re-export `magic_cli` with `hide InstallCommand` to avoid name clash, export own commands
-- File operations: use `FileHelper.findProjectRoot()`, `FileHelper.readFile()`, `FileHelper.writeFile()`, `FileHelper.fileExists()`
-- Stub loading: `StubLoader.load('install/deeplink_config', searchPaths: paths)` — searches `assets/stubs/` directory
-- Code injection: `ConfigEditor.addImportToFile()`, `ConfigEditor.insertCodeBeforePattern()` — idempotent (check before inserting)
-- JSON output: `JsonEditor.writeJson(path, data)` for structured output files
-- Testability: make `getProjectRoot()` and `getStubSearchPaths()` overridable methods — test subclasses override to use temp dirs
-- Pure parsers/builders: `parseDeeplinkConfig()`, `buildAppleAppSiteAssociation()`, `buildAssetLinks()` are public, stateless, testable independently
-- CLI flags override config file values — merge strategy: read config first, then let CLI args take precedence
+Commands extend `ArtisanCommand` from `fluttersdk_artisan`:
+
+- **Base class**: `ArtisanCommand` — implement `signature` DSL, `description`, `boot` property, `Future<int> handle(ArtisanContext ctx)`
+- **Signature DSL**: `'name {argument} {--option}'` — define command name, arguments, flags, and options in one property
+- **Install command**: extend `ArtisanInstallCommand` (abstract) — implement `pluginName(ArtisanContext)`, drive `install.yaml` manifest
+- **Context**: `ArtisanContext` provides `output` (logging), `input` (parsed args), `buildContext` (host app data), `isDryRun`, `isForce` properties
+- **Manifest-driven install**: `install.yaml` at package root defines what to publish, which providers to inject, config factories. See artisan schema docs (fluttersdk_artisan/doc/).
+- **Transactional DSL**: `installer.writeFile(path, content)` (atomic, rollback-safe), `installer.injectImport(file, import)` (via ConfigEditor), `installer.publishConfig(stub, target)`, `installer.native(...)` (platform-specific). Stage these in `_applyFluentOverride()` before calling `installer.commit(dryRun: isDryRun, force: isForce)`.
+- **Helper-backed mutations**: `ConfigEditor.addImportToFile()`, `HtmlEditor.addHeadTag()` etc. are synchronous + not rolled back — order them AFTER transactional writes to avoid partial-failure exposure.
+- **Stub loading**: `StubLoader.load('install/deeplink_config', searchPaths: paths)` — searches `assets/stubs/` directory
+- **File operations**: all via `FileHelper` or transactional installer — never `dart:io` directly in commands
+- **Testability**: override `getProjectRoot()` and `getStubSearchPaths()` in test subclasses for temp dirs
+- **Pure parsers/builders**: `parseDeeplinkConfig()`, `buildAppleAppSiteAssociation()`, `buildAssetLinks()` are public, stateless, testable independently
+- **CLI flags override config file values**: read config first, let args take precedence
+- **Exit codes**: return 0 on success, 1 on user error, other codes for internal failures. Use `ctx.output.error(message)` before returning non-zero.
+- **NO MCP TOOLS**: deeplink ships only mutating commands (install/generate), so the `DeeplinkArtisanProvider.mcpTools()` returns an empty list.

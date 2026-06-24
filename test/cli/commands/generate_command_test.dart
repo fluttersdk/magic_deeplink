@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:args/args.dart';
+import 'package:fluttersdk_artisan/artisan.dart';
 import 'package:test/test.dart';
 
 import 'package:magic_deeplink/src/cli/commands/generate_command.dart';
@@ -14,6 +14,27 @@ class _TestGenerateCommand extends GenerateCommand {
 
   @override
   String getProjectRoot() => root;
+}
+
+/// Builds an [ArtisanContext] for the given [options] against the command's
+/// parsed signature, including multi-value options.
+ArtisanContext _ctx(
+  GenerateCommand cmd, {
+  Map<String, dynamic> options = const <String, dynamic>{},
+}) {
+  final defaults = <String, dynamic>{
+    'output': 'public',
+    'root': '.',
+    'team-id': '',
+    'bundle-id': '',
+    'package-name': '',
+    'sha256-fingerprints': <String>[],
+    'paths': <String>['/*'],
+  };
+  return ArtisanContext.bare(
+    MapInput({...defaults, ...options}, signature: cmd.parsedSignature),
+    BufferedOutput(),
+  );
 }
 
 void main() {
@@ -37,7 +58,7 @@ void main() {
     // -----------------------------------------------------------------------
 
     test('name returns generate', () {
-      expect(command.name, 'generate');
+      expect(command.name, 'deeplink:generate');
     });
 
     test('description contains deep link or configuration files', () {
@@ -51,12 +72,11 @@ void main() {
       );
     });
 
-    test('configure() adds --output option with abbr o and default public', () {
+    test('configure() adds --output option with default public', () {
       final parser = ArgParser();
       command.configure(parser);
       final options = parser.options['output'];
       expect(options, isNotNull);
-      expect(options?.abbr, 'o');
       expect(options?.defaultsTo, 'public');
     });
 
@@ -240,18 +260,17 @@ Map<String, dynamic> get deeplinkConfig => {
     test(
         'handle() with temp dir writes apple-app-site-association and assetlinks.json',
         () async {
-      await command.runWith([
-        '--output',
-        'public',
-        '--team-id',
-        'TEAM1',
-        '--bundle-id',
-        'com.example.app',
-        '--package-name',
-        'com.example.app',
-        '--sha256-fingerprints',
-        'AA:BB:CC',
-      ]);
+      final ctx = _ctx(command, options: {
+        'output': 'public',
+        'team-id': 'TEAM1',
+        'bundle-id': 'com.example.app',
+        'package-name': 'com.example.app',
+        'sha256-fingerprints': ['AA:BB:CC'],
+        'paths': ['/*'],
+      });
+      final exitCode = await command.handle(ctx);
+
+      expect(exitCode, 0);
 
       final aasaFile =
           File('${tempDir.path}/public/apple-app-site-association');
@@ -276,7 +295,7 @@ Map<String, dynamic> get deeplinkConfig => {
 
     test('handle reads from config file when present and no CLI flags',
         () async {
-      // Create config file
+      // Create config file.
       final configDir = Directory('${tempDir.path}/lib/config');
       configDir.createSync(recursive: true);
       final configFile = File('${configDir.path}/deeplink.dart');
@@ -300,7 +319,10 @@ Map<String, dynamic> get deeplinkConfig => {
 };
 ''');
 
-      await command.runWith(['--output', 'public']);
+      // No explicit team-id/bundle-id/package-name/fingerprints — should read
+      // from config file.
+      final ctx = _ctx(command, options: {'output': 'public'});
+      await command.handle(ctx);
 
       final aasaFile =
           File('${tempDir.path}/public/apple-app-site-association');
@@ -324,7 +346,7 @@ Map<String, dynamic> get deeplinkConfig => {
     });
 
     test('handle CLI flags override config file values', () async {
-      // Create config file
+      // Create config file.
       final configDir = Directory('${tempDir.path}/lib/config');
       configDir.createSync(recursive: true);
       final configFile = File('${configDir.path}/deeplink.dart');
@@ -348,20 +370,16 @@ Map<String, dynamic> get deeplinkConfig => {
 };
 ''');
 
-      await command.runWith([
-        '--output',
-        'public',
-        '--team-id',
-        'CLI_TEAM',
-        '--bundle-id',
-        'com.cli.ios',
-        '--package-name',
-        'com.cli.android',
-        '--sha256-fingerprints',
-        'CLI:FP',
-        '--paths',
-        '/cli/*',
-      ]);
+      // CLI flags should win over config file values.
+      final ctx = _ctx(command, options: {
+        'output': 'public',
+        'team-id': 'CLI_TEAM',
+        'bundle-id': 'com.cli.ios',
+        'package-name': 'com.cli.android',
+        'sha256-fingerprints': ['CLI:FP'],
+        'paths': ['/cli/*'],
+      });
+      await command.handle(ctx);
 
       final aasaFile =
           File('${tempDir.path}/public/apple-app-site-association');

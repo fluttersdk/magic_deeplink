@@ -1,164 +1,95 @@
-import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
-import 'package:magic_cli/magic_cli.dart';
+import 'package:fluttersdk_artisan/artisan.dart';
 
-/// CLI command to install the deep link configuration file into the project.
+/// `deeplink:install`, installs magic_deeplink via the bundled install.yaml
+/// manifest.
 ///
-/// Writes `lib/config/deeplink.dart` to the current working directory.
-/// Skips the write if the file already exists unless `--force` is passed.
-/// Injects providers and configFactories into the host Magic app.
+/// Driven entirely by the manifest: publishes lib/config/deeplink.dart from
+/// the bundled stub, injects DeeplinkServiceProvider into lib/config/app.dart,
+/// and injects the deeplinkConfig factory into lib/main.dart so the Magic IoC
+/// container resolves the runtime Deeplink facade.
 ///
 /// ## Usage
 ///
 /// ```bash
-/// dart run magic_deeplink install
-/// dart run magic_deeplink install --force
+/// dart run <app>:artisan deeplink:install
+/// dart run <app>:artisan deeplink:install --force
+/// dart run <app>:artisan deeplink:install --dry-run
 /// ```
-class InstallCommand extends Command {
+class InstallCommand extends ArtisanInstallCommand {
   @override
-  String get name => 'install';
+  String get signature => 'deeplink:install $baseFlags';
 
   @override
   String get description =>
-      'Install deep link configuration and inject into Magic app.';
+      'Install magic_deeplink via the bundled manifest (config publish + provider + configFactory inject).';
 
-  /// Return the Flutter project root directory.
-  ///
-  /// Overridable in tests to point at a temp directory without requiring
-  /// a real pubspec.yaml to be present on disk.
-  String getProjectRoot() {
-    return FileHelper.findProjectRoot();
-  }
+  @override
+  String pluginName(ArtisanContext ctx) => 'magic_deeplink';
 
-  /// Returns the paths to search for stubs.
+  /// Resolves the absolute path to the bundled install.yaml.
   ///
-  /// Overridable in tests.
-  List<String> getStubSearchPaths() {
-    return [
-      _resolvePluginStubsDir(),
-      '${Directory.current.path}/assets/stubs',
-    ];
+  /// Uses [Isolate.resolvePackageUri] starting from
+  /// `package:magic_deeplink/magic_deeplink.dart`. The barrel lives at
+  /// `<plugin_root>/lib/magic_deeplink.dart`, so two parent lookups back out
+  /// to the plugin root where install.yaml resides.
+  ///
+  /// Returns `null` when the manifest cannot be located so [handle] can
+  /// surface a clean error.
+  ///
+  /// @return The absolute manifest path, or `null` when not found.
+  Future<String?> resolveManifestPath() async {
+    final resolved = await Isolate.resolvePackageUri(
+      Uri.parse('package:magic_deeplink/magic_deeplink.dart'),
+    );
+    if (resolved == null || resolved.scheme != 'file') return null;
+
+    // resolved -> <plugin_root>/lib/magic_deeplink.dart; two parent lookups
+    // back out to the plugin root where install.yaml lives.
+    final pluginRoot = File(resolved.toFilePath()).parent.parent.path;
+    final manifestPath = '$pluginRoot/install.yaml';
+    return File(manifestPath).existsSync() ? manifestPath : null;
   }
 
   @override
-  void configure(ArgParser parser) {
-    parser.addFlag(
-      'force',
-      abbr: 'f',
-      help: 'Overwrite existing configuration file.',
-      defaultsTo: false,
-      negatable: false,
-    );
-  }
-
-  @override
-  Future<void> handle() async {
-    // 1. Read CLI flags before doing any file work.
-    final force = arguments['force'] as bool? ?? false;
-    final root = getProjectRoot();
-    final appPath = '$root/lib/config/app.dart';
-    final mainPath = '$root/lib/main.dart';
-    final configPath = '$root/lib/config/deeplink.dart';
-
-    info('Installing deep link configuration...');
-
-    // 2. Validate Magic is installed
-    if (!FileHelper.fileExists(appPath)) {
-      throw Exception(
-          'Magic Framework not detected. Run `magic install` first.');
-    }
-
-    // 3. Write config file
-    if (FileHelper.fileExists(configPath) && !force) {
-      warn('Configuration file already exists. Use --force to overwrite.');
-    } else {
-      final configContent = StubLoader.load('install/deeplink_config',
-          searchPaths: getStubSearchPaths());
-      FileHelper.writeFile(configPath, configContent);
-      success('Created lib/config/deeplink.dart');
-    }
-
-    // 4. Inject into app.dart
-    _injectIntoApp(appPath);
-
-    // 5. Inject into main.dart
-    _injectIntoMain(mainPath);
-
-    success('Deeplink configuration installed successfully!');
-  }
-
-  /// Injects provider and imports into lib/config/app.dart
-  void _injectIntoApp(String appPath) {
-    ConfigEditor.addImportToFile(
-      filePath: appPath,
-      importStatement: "import 'package:magic_deeplink/magic_deeplink.dart';",
-    );
-
-    final content = FileHelper.readFile(appPath);
-    if (!content.contains('DeeplinkServiceProvider')) {
-      ConfigEditor.insertCodeBeforePattern(
-        filePath: appPath,
-        pattern: RegExp(r'\s+\]\,\s*\},?'),
-        code: '      (app) => DeeplinkServiceProvider(app),\n',
+  Future<int> handle(ArtisanContext ctx) async {
+    // 1. Resolve and parse the manifest.
+    final manifestPath = await resolveManifestPath();
+    if (manifestPath == null) {
+      ctx.output.error(
+        'magic_deeplink install.yaml could not be resolved. The plugin asset '
+        'bundle is missing or the package was loaded from an unexpected location.',
       );
-      success('Injected DeeplinkServiceProvider into lib/config/app.dart');
+      return 1;
     }
-  }
 
-  /// Injects configFactory and imports into lib/main.dart
-  void _injectIntoMain(String mainPath) {
-    if (!FileHelper.fileExists(mainPath)) return;
+    final InstallManifest manifest;
+    try {
+      manifest = ManifestParser.parseFile(manifestPath);
+    } on FormatException catch (e) {
+      ctx.output.error('install.yaml at $manifestPath: $e');
+      return 1;
+    } on ManifestValidationException catch (e) {
+      ctx.output.error('install.yaml at $manifestPath: ${e.message}');
+      return 1;
+    }
 
-    ConfigEditor.addImportToFile(
-      filePath: mainPath,
-      importStatement: "import 'config/deeplink.dart';",
+    // 2. Build the install context and run the manifest installer.
+    final installContext = buildContext(ctx);
+    final installer = ManifestInstaller(installContext, manifest);
+    final result = await installer.install(
+      dryRun: isDryRun(ctx),
+      force: isForce(ctx),
+      nonInteractive: isNonInteractive(ctx),
     );
 
-    final content = FileHelper.readFile(mainPath);
-    if (!content.contains('deeplinkConfig')) {
-      ConfigEditor.insertCodeBeforePattern(
-        filePath: mainPath,
-        pattern: RegExp(r'\s+\]\,\s*\);'),
-        code: '      () => deeplinkConfig,\n',
-      );
-      success('Injected deeplinkConfig into lib/main.dart');
+    // 3. Echo the post_install message on success.
+    if (result is Success && manifest.postInstall.message != null) {
+      ctx.output.info(manifest.postInstall.message!);
     }
-  }
 
-  /// Tries to resolve the package assets directory dynamically using package_config.json
-  String _resolvePluginStubsDir() {
-    final packageConfigPath =
-        '${Directory.current.path}/.dart_tool/package_config.json';
-    if (File(packageConfigPath).existsSync()) {
-      final content = File(packageConfigPath).readAsStringSync();
-      try {
-        final map = jsonDecode(content) as Map<String, dynamic>;
-        final packages = map['packages'] as List<dynamic>? ?? [];
-        for (final package in packages) {
-          if (package['name'] == 'magic_deeplink') {
-            final rootUri = package['rootUri'] as String;
-            String parsedPath;
-            if (rootUri.startsWith('file://')) {
-              parsedPath = Uri.parse(rootUri).toFilePath();
-            } else if (rootUri.startsWith('../')) {
-              parsedPath = Uri.parse(rootUri).toFilePath();
-              parsedPath = File(packageConfigPath)
-                  .parent
-                  .parent
-                  .uri
-                  .resolve(rootUri)
-                  .toFilePath();
-            } else {
-              parsedPath = rootUri;
-            }
-            return '$parsedPath/assets/stubs'.replaceAll('//', '/');
-          }
-        }
-      } catch (_) {
-        // Fallback below
-      }
-    }
-    return '${Directory.current.path}/assets/stubs';
+    return result is Success || result is DryRun ? 0 : 1;
   }
 }

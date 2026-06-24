@@ -1,0 +1,48 @@
+# magic_deeplink install manifest (PluginInstaller DSL schema v1).
+#
+# Deeplink is a Magic-side plugin: install publishes lib/config/deeplink.dart
+# from the bundled stub, registers DeeplinkServiceProvider into the consumer's
+# lib/config/app.dart providers list, and injects the deeplinkConfig factory
+# into lib/main.dart so the Magic IoC container resolves the runtime Deeplink
+# facade.
+#
+# No handler stubs are published at install time: deeplink handler classes are
+# written by hand and registered in a ServiceProvider. The `deeplink:generate`
+# command produces the platform association files (apple-app-site-association,
+# assetlinks.json), not handler classes.
+#
+# See doc/install_yaml_schema.md (in fluttersdk_artisan) for the full schema.
+
+plugin_name: magic_deeplink
+
+publish:
+  install/deeplink_config: lib/config/deeplink.dart
+
+magic:
+  provider: DeeplinkServiceProvider
+  config_factory: deeplinkConfig
+
+post_install:
+  message: |
+    magic_deeplink installed. Bootstrap workflow:
+
+    1. Review lib/config/deeplink.dart and fill in your domain, team_id,
+       bundle_id, package_name, and sha256_fingerprints.
+
+    2. Register deeplink handlers in a ServiceProvider boot() body:
+
+         Deeplink.register('/users/:id', UserDeeplinkHandler.new);
+         Deeplink.register('/orders/:id', OrderDeeplinkHandler.new);
+
+    3. Write each deeplink handler class by hand (implement canHandle + handle)
+       and register it as shown in step 2. There is no handler generator.
+
+    4. Generate the platform association files (apple-app-site-association,
+       assetlinks.json) when you are ready to deploy:
+
+         dart run <app>:artisan deeplink:generate --output ./public
+
+    5. Verify the CLI; the host app's artisan lists deeplink:install and
+       deeplink:generate:
+
+         dart run <app>:artisan list

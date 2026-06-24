@@ -64,13 +64,14 @@ ArtisanContext _ctx(
 /// - `lib/main.dart` with a configFactories list
 void _seedProject(String root) {
   // Seed package_config.json so ManifestInstaller._resolvePluginStubsDir can
-  // locate magic_deeplink's assets/stubs/ directory. The rootUri uses an
-  // absolute file:// URI to avoid path-relative resolution ambiguity.
+  // locate magic_deeplink's assets/stubs/ directory. The rootUri is built with
+  // Uri.directory so it is a well-formed file:// URI on POSIX regardless of the
+  // plugin root path.
   File('$root/.dart_tool/package_config.json')
     ..createSync(recursive: true)
     ..writeAsStringSync(
       '{"configVersion":2,"packages":['
-      '{"name":"magic_deeplink","rootUri":"file://$_pluginRoot/","packageUri":"lib/"}'
+      '{"name":"magic_deeplink","rootUri":"${Uri.directory(_pluginRoot)}","packageUri":"lib/"}'
       ']}',
     );
 

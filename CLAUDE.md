@@ -6,14 +6,14 @@ Flutter deep linking plugin for the Magic Framework. Universal Links (iOS) + App
 
 ## Commands
 
-**Host-dispatched via artisan.** Add `DeeplinkArtisanProvider` to your app's artisan providers:
+**Host-dispatched via artisan.** Add `MagicDeeplinkArtisanProvider` to your app's artisan providers:
 
 ```dart
 // lib/config/artisan.dart
 import 'package:magic_deeplink/src/cli/deeplink_artisan_provider.dart';
 
 List<ArtisanServiceProvider> get artisanProviders => [
-  DeeplinkArtisanProvider(),
+  MagicDeeplinkArtisanProvider(),
   // ... other providers
 ];
 ```
@@ -51,7 +51,7 @@ install.yaml                   # Plugin manifest: config publish, provider/facto
 assets/stubs/                  # Stub templates for code generation
 ```
 
-**CLI architecture**: Commands are registered via `DeeplinkArtisanProvider.commands()` (extends `ArtisanServiceProvider`). No bin/ entrypoint — the host app's `artisan.dart` CLI dispatch handles command routing. The `InstallCommand` extends `ArtisanInstallCommand` and is manifest-driven: `install.yaml` specifies what config files to publish and which service provider to inject; the command executes the manifest through the artisan transactional installer.
+**CLI architecture**: Commands are registered via `MagicDeeplinkArtisanProvider.commands()` (extends `ArtisanServiceProvider`). No bin/ entrypoint — the host app's `artisan.dart` CLI dispatch handles command routing. The `InstallCommand` extends `ArtisanInstallCommand` and is manifest-driven: `install.yaml` specifies what config files to publish and which service provider to inject; the command executes the manifest through the artisan transactional installer.
 
 **Data flow:** App launch → `DeeplinkServiceProvider.boot()` → creates driver → listens `onLink` stream → `manager.handleUri()` → first matching handler wins
 

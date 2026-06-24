@@ -5,12 +5,12 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### 💥 Breaking Changes
-- **Removed bin/ entrypoint**: `dart run magic_deeplink:install` / `dart run magic_deeplink:generate` no longer available. Use host-dispatched artisan commands instead: `dart run <app>:artisan deeplink:install` and `dart run <app>:artisan deeplink:generate`. This requires adding `DeeplinkArtisanProvider` to your app's artisan providers list (see CLAUDE.md for setup).
+- **Removed bin/ entrypoint**: `dart run magic_deeplink:install` / `dart run magic_deeplink:generate` no longer available. Use host-dispatched artisan commands instead: `dart run <app>:artisan deeplink:install` and `dart run <app>:artisan deeplink:generate`. This requires adding `MagicDeeplinkArtisanProvider` to your app's artisan providers list (see CLAUDE.md for setup).
 - **Removed magic_cli dependency**: Commands now extend `ArtisanCommand` from `fluttersdk_artisan` instead of `Command` from `magic_cli`.
 
 ### ✨ Improvements
 - **Manifest-driven install**: The `deeplink:install` command is now powered by `install.yaml` and the artisan transactional installer, replacing imperative setup code. This enables consistent scaffolding across all magic plugins.
-- **Read-only MCP tools**: `DeeplinkArtisanProvider.mcpTools()` is available but empty (deeplink ships only mutating commands; diagnostic tooling deferred).
+- **Read-only MCP tools**: none. magic_deeplink ships only mutating commands (install, generate) and registers no MCP tools.
 
 ### 📚 Documentation
 - **README**: Rewrite to match Magic ecosystem format (centered logo, badges, features table, quick start)

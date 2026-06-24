@@ -6,8 +6,10 @@
 # into lib/main.dart so the Magic IoC container resolves the runtime Deeplink
 # facade.
 #
-# No handler stubs are published at install time: deeplink handlers are
-# scaffolded on demand by `dart run artisan deeplink:generate`.
+# No handler stubs are published at install time: deeplink handler classes are
+# written by hand and registered in a ServiceProvider. The `deeplink:generate`
+# command produces the platform association files (apple-app-site-association,
+# assetlinks.json), not handler classes.
 #
 # See doc/install_yaml_schema.md (in fluttersdk_artisan) for the full schema.
 
@@ -32,10 +34,15 @@ post_install:
          Deeplink.register('/users/:id', UserDeeplinkHandler.new);
          Deeplink.register('/orders/:id', OrderDeeplinkHandler.new);
 
-    3. Scaffold new handlers via the generator:
+    3. Write each deeplink handler class by hand (implement canHandle + handle)
+       and register it as shown in step 2. There is no handler generator.
 
-         dart run artisan deeplink:generate UserDeeplinkHandler --route='/users/:id'
+    4. Generate the platform association files (apple-app-site-association,
+       assetlinks.json) when you are ready to deploy:
 
-    4. Verify the CLI:
+         dart run <app>:artisan deeplink:generate --output ./public
 
-         dart run artisan list   # includes deeplink:install + deeplink:generate
+    5. Verify the CLI; the host app's artisan lists deeplink:install and
+       deeplink:generate:
+
+         dart run <app>:artisan list

@@ -11,7 +11,7 @@ import 'package:fluttersdk_artisan/artisan.dart';
 /// ## Usage
 ///
 /// ```bash
-/// dart run artisan deeplink:generate \
+/// dart run <app>:artisan deeplink:generate \
 ///   --team-id ABCDE12345 \
 ///   --bundle-id your.package.name \
 ///   --package-name your.package.name \

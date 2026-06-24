@@ -14,9 +14,9 @@ Commands extend `ArtisanCommand` from `fluttersdk_artisan`:
 - **Transactional DSL**: `installer.writeFile(path, content)` (atomic, rollback-safe), `installer.injectImport(file, import)` (via ConfigEditor), `installer.publishConfig(stub, target)`, `installer.native(...)` (platform-specific). Stage these in `_applyFluentOverride()` before calling `installer.commit(dryRun: isDryRun, force: isForce)`.
 - **Helper-backed mutations**: `ConfigEditor.addImportToFile()`, `HtmlEditor.addHeadTag()` etc. are synchronous + not rolled back — order them AFTER transactional writes to avoid partial-failure exposure.
 - **Stub loading**: `StubLoader.load('install/deeplink_config', searchPaths: paths)` — searches `assets/stubs/` directory
-- **File operations**: all via `FileHelper` or transactional installer — never `dart:io` directly in commands
+- **File operations**: install-flow file writes go through `FileHelper` or the transactional installer; the generate command writes the platform association files (apple-app-site-association, assetlinks.json) directly via `dart:io`
 - **Testability**: override `getProjectRoot()` and `getStubSearchPaths()` in test subclasses for temp dirs
 - **Pure parsers/builders**: `parseDeeplinkConfig()`, `buildAppleAppSiteAssociation()`, `buildAssetLinks()` are public, stateless, testable independently
 - **CLI flags override config file values**: read config first, let args take precedence
 - **Exit codes**: return 0 on success, 1 on user error, other codes for internal failures. Use `ctx.output.error(message)` before returning non-zero.
-- **NO MCP TOOLS**: deeplink ships only mutating commands (install/generate), so the `DeeplinkArtisanProvider.mcpTools()` returns an empty list.
+- **NO MCP TOOLS**: deeplink ships only mutating commands (install, generate); `MagicDeeplinkArtisanProvider` registers no MCP tools.

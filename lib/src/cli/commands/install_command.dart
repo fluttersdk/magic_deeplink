@@ -14,9 +14,9 @@ import 'package:fluttersdk_artisan/artisan.dart';
 /// ## Usage
 ///
 /// ```bash
-/// dart run artisan deeplink:install
-/// dart run artisan deeplink:install --force
-/// dart run artisan deeplink:install --dry-run
+/// dart run <app>:artisan deeplink:install
+/// dart run <app>:artisan deeplink:install --force
+/// dart run <app>:artisan deeplink:install --dry-run
 /// ```
 class InstallCommand extends ArtisanInstallCommand {
   @override

@@ -22,4 +22,6 @@
 /// import `package:magic_deeplink/magic_deeplink.dart` for the full surface.
 library;
 
+export 'src/cli/commands/generate_command.dart';
+export 'src/cli/commands/install_command.dart';
 export 'src/cli/deeplink_artisan_provider.dart';

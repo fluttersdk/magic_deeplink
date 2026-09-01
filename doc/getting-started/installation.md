@@ -36,7 +36,7 @@ Or add it manually to `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  magic_deeplink: ^0.0.1
+  magic_deeplink: ^0.0.3
 ```
 
 Then fetch dependencies:

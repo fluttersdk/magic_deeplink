@@ -104,9 +104,15 @@ class OneSignalDeeplinkHandler {
   void setup(DeeplinkManager manager, dynamic notifications) {
     final Stream<dynamic>? clicks = _resolveClickStream(notifications);
 
+    // Cancelled before the null check, not after it. A second `setup` whose
+    // manager publishes no click stream still supersedes the first, and leaving
+    // the previous subscription live there would route taps through a manager
+    // this handler was just told to stop following.
+    _subscription?.cancel();
+    _subscription = null;
+
     if (clicks == null) return;
 
-    _subscription?.cancel();
     _subscription = clicks.listen(
       (event) => _route(manager, event),
       onError: (Object error) => _report(

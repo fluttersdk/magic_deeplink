@@ -68,6 +68,36 @@ class FakeShapelessNotificationManager {
   String get name => 'shapeless';
 }
 
+/// A manager whose click-stream getter throws something the handler does not
+/// answer.
+///
+/// `NoSuchMethodError` means "this build is too old" and the handler reports it
+/// by name. A `StateError` means something else entirely, and it is what an
+/// uninitialised manager throws; unguarded, it escapes `boot()` and aborts the
+/// whole application.
+class FakeThrowingNotificationManager {
+  /// Throws rather than answering, as an uninitialised manager does.
+  Stream<Object> get onPushClicked =>
+      throw StateError('NotificationManager is not initialised.');
+}
+
+/// Binds a `notifications` factory that throws when it is resolved.
+///
+/// `app.make` runs the binding factory, so a misconfigured notifications plugin
+/// can fail at RESOLUTION rather than at construction, before the deeplink
+/// provider ever reaches the manager.
+class FakeThrowingNotificationServiceProvider extends ServiceProvider {
+  /// Creates the provider whose `notifications` factory throws.
+  FakeThrowingNotificationServiceProvider(super.app);
+
+  @override
+  void register() {
+    app.singleton('notifications', () {
+      throw StateError('The notifications plugin is misconfigured.');
+    });
+  }
+}
+
 /// Registers notifications the way `NotificationServiceProvider` does.
 ///
 /// The manager is bound in `register`, so it is resolvable before any provider
@@ -211,6 +241,94 @@ void main() {
       expect(handler.handled, [Uri.parse('https://uptizm.com/incidents/42')]);
 
       await notifications.dispose();
+    });
+
+    test('dispose stops routing pushes the provider had wired', () async {
+      await MagicApp.init(configs: [
+        {
+          'deeplink': {'enabled': true}
+        }
+      ]);
+
+      final notifications = FakeNotificationManager();
+      final handler = CapturingHandler();
+      DeeplinkManager().registerHandler(handler);
+
+      await app.register(provider);
+      await app.register(FakeNotificationServiceProvider(app, notifications));
+      await app.boot();
+
+      provider.dispose();
+
+      notifications.publishClick({
+        'deep_link': 'https://uptizm.com/incidents/42',
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      expect(handler.handled, isEmpty);
+
+      await notifications.dispose();
+    });
+
+    test(
+        'a notifications factory that throws is reported and does not abort '
+        'app boot', () async {
+      await MagicApp.init(configs: [
+        {
+          'deeplink': {'enabled': true}
+        }
+      ]);
+
+      final log = Log.fake();
+
+      await app.register(provider);
+      await app.register(FakeThrowingNotificationServiceProvider(app));
+
+      // The assertion that matters is that this completes at all. magic's
+      // `Application.boot` awaits providers in a bare loop, so an escaping
+      // throw here would abort boot and every provider after this one.
+      await app.boot();
+
+      expect(app.isBooted, isTrue);
+      expect(
+        log.entries.where(
+          (entry) =>
+              entry.level == 'error' && entry.message.contains('misconfigured'),
+        ),
+        isNotEmpty,
+      );
+    });
+
+    test(
+        'an onPushClicked getter that throws a StateError is reported and does '
+        'not abort app boot', () async {
+      await MagicApp.init(configs: [
+        {
+          'deeplink': {'enabled': true}
+        }
+      ]);
+
+      final log = Log.fake();
+
+      await app.register(provider);
+      await app.register(
+        FakeNotificationServiceProvider(
+          app,
+          FakeThrowingNotificationManager(),
+        ),
+      );
+
+      await app.boot();
+
+      expect(app.isBooted, isTrue);
+      expect(
+        log.entries.where(
+          (entry) =>
+              entry.level == 'error' &&
+              entry.message.contains('not initialised'),
+        ),
+        isNotEmpty,
+      );
     });
 
     test('subscribes to nothing when notifications is not installed', () async {

@@ -135,6 +135,26 @@ void main() {
       await notifications.dispose();
     });
 
+    test(
+        'a second setup whose manager publishes no stream still drops the '
+        'first subscription', () async {
+      final first = FakeNotificationManager();
+
+      handler.setup(deeplinks, first);
+
+      // The second manager cannot be followed, but it still supersedes the
+      // first: leaving that subscription live would route taps through a
+      // manager this handler was just told to stop following.
+      handler.setup(deeplinks, FakeShapelessNotificationManager());
+
+      first.publishClick({'deep_link': 'https://uptizm.com/incidents/42'});
+      await Future<void>.delayed(Duration.zero);
+
+      expect(deeplinks.handled, isEmpty);
+
+      await first.dispose();
+    });
+
     test('setup ignores a click carrying no deeplink', () async {
       final notifications = FakeNotificationManager();
 

@@ -1,23 +1,112 @@
 import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:magic/magic.dart';
 import 'package:magic_deeplink/src/deeplink_manager.dart';
-import 'package:magic_deeplink/src/handlers/deeplink_handler.dart';
 import 'package:magic_deeplink/src/drivers/app_links_driver.dart';
+import 'package:magic_deeplink/src/handlers/deeplink_handler.dart';
 import 'package:magic_deeplink/src/providers/deeplink_service_provider.dart';
 
-class MockPushDriver {
-  final StreamController<Map<String, dynamic>> _controller =
-      StreamController.broadcast();
-  Stream<Map<String, dynamic>> get onNotificationClicked => _controller.stream;
+/// A push click event shaped like `magic_notifications`' `PushNotificationEvent`.
+///
+/// Deliberately NOT a `Map<String, dynamic>`: the payload lives behind a `data`
+/// field on an event object, which is the shape the real stream publishes and
+/// the shape the old wiring cast away.
+class FakePushNotificationEvent {
+  /// The notification payload, carrying the server's own keys flat.
+  final Map<String, dynamic> data;
 
-  void simulateClick(Map<String, dynamic> data) {
-    _controller.add(data);
+  /// Creates an event carrying [data].
+  const FakePushNotificationEvent(this.data);
+}
+
+/// Stands in for `magic_notifications`' `NotificationManager`.
+///
+/// It publishes clicks the way the real manager does: `onPushClicked` is a
+/// broadcast stream that exists from construction, while `pushDriver` only
+/// answers once the notifications provider has booted and attached one.
+class FakeNotificationManager {
+  final StreamController<FakePushNotificationEvent> _clicks =
+      StreamController<FakePushNotificationEvent>.broadcast();
+
+  bool _driverAttached = false;
+
+  /// Whether anything is subscribed to the click stream.
+  bool get hasClickListener => _clicks.hasListener;
+
+  /// Push notifications the user tapped.
+  Stream<FakePushNotificationEvent> get onPushClicked => _clicks.stream;
+
+  /// The attached push driver, which does not exist before boot.
+  Object get pushDriver {
+    if (!_driverAttached) {
+      throw StateError('Push driver not configured.');
+    }
+
+    return _driverAttached;
+  }
+
+  /// Attaches the driver, as the notifications provider's `boot` does.
+  void attachDriver() => _driverAttached = true;
+
+  /// Publishes a tapped push carrying [data].
+  void publishClick(Map<String, dynamic> data) {
+    if (!_driverAttached) {
+      throw StateError('No driver is attached, so no push can arrive.');
+    }
+
+    _clicks.add(FakePushNotificationEvent(data));
+  }
+
+  /// Closes the click stream.
+  Future<void> dispose() => _clicks.close();
+}
+
+/// A notifications manager that publishes nothing a deeplink can be read from.
+class FakeShapelessNotificationManager {
+  /// The one thing this build offers, and not the click stream.
+  String get name => 'shapeless';
+}
+
+/// Registers notifications the way `NotificationServiceProvider` does.
+///
+/// The manager is bound in `register`, so it is resolvable before any provider
+/// boots; the driver is only attached in `boot`, which runs AFTER the deeplink
+/// provider's when notifications is registered second.
+class FakeNotificationServiceProvider extends ServiceProvider {
+  /// The manager this provider binds.
+  final Object manager;
+
+  /// Creates the provider binding [manager] under `notifications`.
+  FakeNotificationServiceProvider(super.app, this.manager);
+
+  @override
+  void register() {
+    app.singleton('notifications', () => manager);
+  }
+
+  @override
+  Future<void> boot() async {
+    if (manager is FakeNotificationManager) {
+      (manager as FakeNotificationManager).attachDriver();
+    }
   }
 }
 
-class MockNotificationManager {
-  final MockPushDriver pushDriver = MockPushDriver();
+/// Captures every URI the deeplink manager routes to it.
+class CapturingHandler implements DeeplinkHandler {
+  /// The URIs this handler was asked to handle, in order.
+  final List<Uri> handled = [];
+
+  @override
+  bool canHandle(Uri uri) => true;
+
+  @override
+  Future<bool> handle(Uri uri) async {
+    handled.add(uri);
+
+    return true;
+  }
 }
 
 void main() {
@@ -29,6 +118,11 @@ void main() {
       MagicApp.reset();
       app = MagicApp.instance;
       provider = DeeplinkServiceProvider(app);
+      DeeplinkManager().forgetHandlers();
+    });
+
+    tearDown(() {
+      DeeplinkManager().forgetHandlers();
     });
 
     test('register binds DeeplinkManager singleton', () {
@@ -38,7 +132,6 @@ void main() {
     });
 
     test('boot sets driver when configured', () async {
-      // Setup config
       await MagicApp.init(configs: [
         {
           'deeplink': {
@@ -74,7 +167,6 @@ void main() {
     });
 
     test('boot connects driver stream to manager', () async {
-      // Setup config
       await MagicApp.init(configs: [
         {
           'deeplink': {
@@ -92,71 +184,77 @@ void main() {
     });
 
     test(
-        'boot sets up OneSignal handler when notifications plugin is available',
-        () async {
-      // Setup config
+        'routes a push click carrying deep_link when notifications is '
+        'registered after this provider', () async {
       await MagicApp.init(configs: [
         {
-          'deeplink': {
-            'enabled': true,
-            'driver': 'app_links',
-          }
+          'deeplink': {'enabled': true}
         }
       ]);
 
-      // Bind mock notification manager
-      final mockNotificationManager = MockNotificationManager();
-      app.singleton('notifications', () => mockNotificationManager);
+      final notifications = FakeNotificationManager();
+      final handler = CapturingHandler();
+      DeeplinkManager().registerHandler(handler);
 
-      provider.register();
-      await provider.boot();
+      // The consumer's own order: deeplinks first, notifications second, so the
+      // push driver does not exist while this provider boots.
+      await app.register(provider);
+      await app.register(FakeNotificationServiceProvider(app, notifications));
+      await app.boot();
 
-      // Get manager
-      final manager = app.make<DeeplinkManager>('deeplinks');
+      notifications.publishClick({
+        'deep_link': 'https://uptizm.com/incidents/42',
+        'title': 'Monitor down',
+      });
+      await Future<void>.delayed(Duration.zero);
 
-      // We need to verify that the handler is connected.
-      // We can do this by simulating a click and checking if handleUri is called.
-      // However, AppLinksDriver might interfere or not be mocked easily here.
-      // But handleUri works by adding to the stream.
+      expect(handler.handled, [Uri.parse('https://uptizm.com/incidents/42')]);
 
-      // We can listen to manager.onLink to see if the notification click propagates as a URI
-      // But manager.onLink only emits what comes from driver.onLink usually?
-      // Wait, let's check DeeplinkManager source.
-      // Task 2.5: Add stream for incoming links: "Add StreamController<Uri>, Stream<Uri> get onLink, internal _handleIncomingLink() method"
-      // If handleUri is called, does it emit to onLink?
-      // Usually handleUri processes the URI (finds a handler).
-      // It might NOT emit to onLink (which represents *incoming* links from the driver).
-      // But wait, if OneSignal is a source of links, it acts like a driver.
+      await notifications.dispose();
+    });
 
-      // Let's check DeeplinkManager implementation via reading it, to be sure.
-      // But for now, let's assume we can check if the mock handler (OneSignalHandler) did its job.
+    test('subscribes to nothing when notifications is not installed', () async {
+      await MagicApp.init(configs: [
+        {
+          'deeplink': {'enabled': true}
+        }
+      ]);
 
-      // Actually, we can use a custom handler in the manager to verify it received the call.
-      bool handlerCalled = false;
-      manager.registerHandler(_TestHandler((uri) {
-        handlerCalled = true;
-        return uri.path == '/onesignal';
-      }));
+      final notifications = FakeNotificationManager();
 
-      // Simulate click
-      mockNotificationManager.pushDriver
-          .simulateClick({'url': 'https://uptizm.com/onesignal'});
+      await app.register(provider);
+      await app.boot();
 
-      // Wait for async processing
-      await Future.delayed(Duration.zero);
+      expect(app.bound('notifications'), isFalse);
+      expect(notifications.hasClickListener, isFalse);
 
-      expect(handlerCalled, isTrue);
+      await notifications.dispose();
+    });
+
+    test('reports when the bound notifications manager publishes no clicks',
+        () async {
+      await MagicApp.init(configs: [
+        {
+          'deeplink': {'enabled': true}
+        }
+      ]);
+
+      final log = Log.fake();
+
+      await app.register(provider);
+      await app.register(
+        FakeNotificationServiceProvider(
+            app, FakeShapelessNotificationManager()),
+      );
+      await app.boot();
+
+      expect(
+        log.entries.where(
+          (entry) =>
+              entry.level == 'error' && entry.message.contains('onPushClicked'),
+        ),
+        isNotEmpty,
+      );
     });
   });
-}
-
-class _TestHandler implements DeeplinkHandler {
-  final bool Function(Uri) check;
-  _TestHandler(this.check);
-
-  @override
-  bool canHandle(Uri uri) => check(uri);
-
-  @override
-  Future<bool> handle(Uri uri) async => true;
 }

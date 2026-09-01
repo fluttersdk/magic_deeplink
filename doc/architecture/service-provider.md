@@ -112,36 +112,23 @@ Future.delayed(Duration.zero, () async {
 <a name="onesignal-handler-setup"></a>
 ### OneSignal Handler Setup
 
-If the magic_notifications plugin is present and bound, the provider attaches a `OneSignalDeeplinkHandler` that listens for notification-click events and converts them to deep link URIs:
+If the magic_notifications plugin is present and bound, the provider attaches a `OneSignalDeeplinkHandler` that listens for tapped-push events and converts them to deep link URIs:
 
 ```dart
 if (app.bound('notifications')) {
-  try {
-    final notificationManager = app.make('notifications');
-    final driver = (notificationManager as dynamic).pushDriver;
-    if (driver != null) {
-      final oneSignalHandler = OneSignalDeeplinkHandler();
-      oneSignalHandler.setup(
-        manager,
-        driver.onNotificationClicked as Stream<Map<String, dynamic>>,
-      );
-    }
-  } catch (e) {
-    // Silently fail — plugin bound but structure different or stream type mismatch
-  }
+  OneSignalDeeplinkHandler().setup(manager, app.make('notifications'));
 }
 ```
 
-`OneSignalDeeplinkHandler.setup()` subscribes to `onNotificationClicked`, extracts a URI from the notification payload (checking keys `url`, `deep_link`, `link`, `uri`), and calls `manager.handleUri()` for any non-null result.
+`setup()` takes the notification MANAGER, not a stream, and subscribes to its `onPushClicked` stream, which the manager owns from construction and republishes onto whenever a driver is attached later. That is what makes this independent of provider order: only the `'notifications'` binding needs to exist at this point, never a resolved push driver, because every provider has registered by the time any of them boots. `OneSignalDeeplinkHandler` then extracts a URI from the notification payload (checking keys `url`, `deep_link`, `link`, `uri`) and calls `manager.handleUri()` for any non-null result.
 
 <a name="optional-dependency-handling"></a>
 ## Optional Dependency Handling
 
-The integration with magic_notifications is entirely optional. The pattern used has three layers of defence:
+The integration with magic_notifications is entirely optional. The pattern used has two layers of defence:
 
 1. **`app.bound('notifications')`** — guards the entire block. If the plugin was never registered, the block is skipped without error.
-2. **`dynamic` cast** — `notificationManager` is accessed as `dynamic` to avoid a compile-time import of `magic_notifications`. This keeps magic_deeplink free of a hard package dependency.
-3. **`try-catch`** — the push driver accessor and stream cast can throw if the notifications plugin has a different internal structure or version. The `catch` block silently discards the error so a notifications misconfiguration never breaks deep linking.
+2. **`dynamic` resolution inside the handler**: `app.make('notifications')` is handed to the handler untyped, and `OneSignalDeeplinkHandler` reads `onPushClicked` off it structurally rather than importing `magic_notifications` and naming its type. This keeps magic_deeplink free of a hard package dependency. When the bound manager is too old to publish `onPushClicked`, or publishes something that is not a `Stream`, the handler reports the mismatch through magic's `Log` (guarded by `Magic.bound('log')`) instead of throwing, so a notifications version mismatch degrades deep linking rather than breaking app boot.
 
 This pattern should be followed whenever magic_deeplink optionally integrates with another plugin.
 
@@ -167,7 +154,7 @@ Map<String, dynamic> get appConfig => {
 };
 ```
 
-The provider must be listed **after** any provider that registers `'notifications'` so that `app.bound('notifications')` returns the correct result during boot.
+The provider's position relative to any provider registering `'notifications'` does not matter. `app.bound('notifications')` is checked during boot, after every provider has registered, and the OneSignal handler subscribes to the notification manager's own stream rather than to a driver, so it does not need that provider to have booted yet either.
 
 <a name="related"></a>
 ## Related

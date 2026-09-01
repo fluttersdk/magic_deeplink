@@ -37,24 +37,19 @@ class DeeplinkServiceProvider extends ServiceProvider {
       });
     }
 
-    // Setup OneSignal handler if notifications plugin is available
+    // Route tapped push notifications, when the consumer installed the
+    // notifications plugin. An app that ships deep links without push is the
+    // normal case and nothing at all is created for it here, so there is no
+    // subscription and no timer to leak.
+    //
+    // Only the BINDING is required at this point, never the push driver: every
+    // provider has registered by the time any of them boots, so the manager is
+    // resolvable here even though the notifications provider boots after this
+    // one and attaches its driver there. The handler subscribes to the
+    // manager's own click stream, which exists from construction and carries
+    // whatever a driver attached later publishes.
     if (app.bound('notifications')) {
-      try {
-        final notificationManager = app.make('notifications');
-        // access dynamically to avoid hard dependency
-        final driver = (notificationManager as dynamic).pushDriver;
-        if (driver != null) {
-          final oneSignalHandler = OneSignalDeeplinkHandler();
-          // Assume driver has onNotificationClicked stream
-          oneSignalHandler.setup(
-            manager,
-            driver.onNotificationClicked as Stream<Map<String, dynamic>>,
-          );
-        }
-      } catch (e) {
-        // Plugin might be bound but structure different or stream type mismatch
-        // Silently fail or log in debug
-      }
+      OneSignalDeeplinkHandler().setup(manager, app.make('notifications'));
     }
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:magic/magic.dart';
 import '../deeplink_manager.dart';
 import '../drivers/app_links_driver.dart';
@@ -13,15 +15,35 @@ class DeeplinkServiceProvider extends ServiceProvider {
   /// constructed inline in [boot] makes that instruction impossible to follow.
   OneSignalDeeplinkHandler? _pushClicks;
 
+  /// The driver's link stream, held for the same reason as [_pushClicks].
+  StreamSubscription<Uri>? _links;
+
+  /// The driver this provider created, when it created one.
+  AppLinksDriver? _driver;
+
   @override
   void register() {
     app.singleton('deeplinks', () => DeeplinkManager());
   }
 
-  /// Cancel the push-click subscription this provider owns.
-  void dispose() {
+  /// Tear down everything this provider wired.
+  ///
+  /// Provider-level, not handler-level. `doc/basics/handlers.md` tells a
+  /// consumer to call teardown from their service provider, so a `dispose()`
+  /// here that reached only the push-click handler would read as tearing the
+  /// provider down while leaving the driver's own link subscription and the
+  /// driver itself running. Everything [boot] created is dropped, and the
+  /// method is idempotent so a consumer may call it without knowing which parts
+  /// this deployment actually wired.
+  Future<void> dispose() async {
     _pushClicks?.dispose();
     _pushClicks = null;
+
+    await _links?.cancel();
+    _links = null;
+
+    _driver?.dispose();
+    _driver = null;
   }
 
   @override
@@ -32,11 +54,12 @@ class DeeplinkServiceProvider extends ServiceProvider {
 
     if (driverName == 'app_links') {
       final driver = AppLinksDriver();
+      _driver = driver;
       manager.setDriver(driver);
       await driver.initialize(config.get('deeplink') ?? {});
 
       // Connect driver stream to manager
-      driver.onLink.listen((uri) {
+      _links = driver.onLink.listen((uri) {
         manager.handleUri(uri);
       });
 

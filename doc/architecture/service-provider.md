@@ -116,21 +116,52 @@ If the magic_notifications plugin is present and bound, the provider attaches a 
 
 ```dart
 if (app.bound('notifications')) {
-  OneSignalDeeplinkHandler().setup(manager, app.make('notifications'));
+  final handler = OneSignalDeeplinkHandler();
+
+  try {
+    handler.setup(manager, app.make('notifications'));
+    _pushClicks = handler;
+  } catch (error) {
+    handler.dispose();
+
+    if (Magic.bound('log')) {
+      Log.error(
+        '[deeplink] Resolving the bound `notifications` manager failed, so '
+        'a tapped push notification cannot open a deep link: $error',
+      );
+    }
+  }
 }
 ```
+
+The handler is HELD rather than discarded, so [`dispose()`](#provider-teardown) can reach it.
 
 `setup()` takes the notification MANAGER, not a stream, and subscribes to its `onPushClicked` stream, which the manager owns from construction and republishes onto whenever a driver is attached later. That is what makes this independent of provider order: only the `'notifications'` binding needs to exist at this point, never a resolved push driver, because every provider has registered by the time any of them boots. `OneSignalDeeplinkHandler` then extracts a URI from the notification payload (checking keys `url`, `deep_link`, `link`, `uri`) and calls `manager.handleUri()` for any non-null result.
 
 <a name="optional-dependency-handling"></a>
 ## Optional Dependency Handling
 
-The integration with magic_notifications is entirely optional. The pattern used has two layers of defence:
+The integration with magic_notifications is entirely optional. The pattern used has three layers of defence:
 
 1. **`app.bound('notifications')`** — guards the entire block. If the plugin was never registered, the block is skipped without error.
 2. **`dynamic` resolution inside the handler**: `app.make('notifications')` is handed to the handler untyped, and `OneSignalDeeplinkHandler` reads `onPushClicked` off it structurally rather than importing `magic_notifications` and naming its type. This keeps magic_deeplink free of a hard package dependency. When the bound manager is too old to publish `onPushClicked`, or publishes something that is not a `Stream`, the handler reports the mismatch through magic's `Log` (guarded by `Magic.bound('log')`) instead of throwing, so a notifications version mismatch degrades deep linking rather than breaking app boot.
 
+3. **A `try`/`catch` around the resolution**, reporting at error level through the same `Log` seam. `app.make('notifications')` runs the binding factory and `onPushClicked` is a getter, so either can throw, and the handler only answers `NoSuchMethodError` by name (that one means "this build is too old"). Anything else, a `StateError` out of an uninitialised manager for instance, would otherwise escape. That matters more here than it looks: magic's `Application.boot` awaits providers in a bare loop with no error handling of its own, so an escaping throw does not degrade deep linking, it aborts app boot and every provider registered after this one, over a plugin that is optional by design.
+
+This is not a swallowing catch. The wiring this replaced had a `catch (e)` whose body was two comment lines, and that is why the feature stayed inert across two years of releases. This one names what failed, then lets boot continue.
+
 This pattern should be followed whenever magic_deeplink optionally integrates with another plugin.
+
+<a name="provider-teardown"></a>
+## Provider Teardown
+
+`DeeplinkServiceProvider.dispose()` drops everything `boot()` wired: the push-click handler, the driver's link subscription, and the driver itself.
+
+```dart
+await provider.dispose();
+```
+
+It is provider-level rather than handler-level on purpose. `doc/basics/handlers.md` tells a consumer to call teardown from their service provider, so a `dispose()` reaching only the push handler would read as tearing the provider down while leaving the driver running. It is also idempotent, because a consumer calling it does not know which parts a given deployment actually wired.
 
 <a name="registering-the-provider"></a>
 ## Registering the Provider

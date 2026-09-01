@@ -258,7 +258,7 @@ void main() {
       await app.register(FakeNotificationServiceProvider(app, notifications));
       await app.boot();
 
-      provider.dispose();
+      await provider.dispose();
 
       notifications.publishClick({
         'deep_link': 'https://uptizm.com/incidents/42',
@@ -269,6 +269,32 @@ void main() {
 
       await notifications.dispose();
     });
+
+    test('dispose completes on a driver-wired provider, and repeats safely',
+        () async {
+      await MagicApp.init(configs: [
+        {
+          'deeplink': {'enabled': true, 'driver': 'app_links'}
+        }
+      ]);
+
+      await app.register(provider);
+      await app.boot();
+
+      // `doc/basics/handlers.md` tells a consumer to call teardown from their
+      // service provider, and a consumer does not know which parts this
+      // deployment wired, so calling it on a provider with a driver but no
+      // notifications, and calling it twice, both have to be safe.
+      await provider.dispose();
+      await provider.dispose();
+    }, timeout: const Timeout(Duration(seconds: 10)));
+
+    // NOT covered here, and worth saying so rather than implying otherwise:
+    // that the driver's link subscription stops delivering. `AppLinksDriver`
+    // exposes `_appLinks.uriLinkStream` straight from the `app_links` package
+    // with no injection seam, so a unit test cannot emit on it. What the test
+    // above pins is that dispose reaches the driver path at all and is
+    // idempotent; the cancellation itself is read from the source.
 
     test(
         'a notifications factory that throws is reported and does not abort '

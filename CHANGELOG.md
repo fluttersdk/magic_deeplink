@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 - **A second `setup` no longer leaves the first subscription live.** The early return for a manager publishing no click stream sat before the cancel, so re-wiring against a manager this handler cannot follow left it routing taps through the previous one.
 
 ### Added
-- **`DeeplinkServiceProvider.dispose()`.** The push-click handler was constructed inline in `boot` and the reference discarded, so the `dispose` that `doc/basics/handlers.md` tells consumers to call in provider teardown was unreachable. The provider now holds the handler it wired and tears it down.
+- **`DeeplinkServiceProvider.dispose()`, tearing down everything `boot()` wired.** The push-click handler was constructed inline in `boot` and the reference discarded, so the `dispose` that `doc/basics/handlers.md` tells consumers to call in provider teardown was unreachable. The provider now holds the handler it wired, along with the driver's link subscription and the driver itself, and drops all three. Provider-level rather than handler-level on purpose: a `dispose()` reaching only the push handler would read as tearing the provider down while leaving the driver running. Idempotent, because a consumer calling it does not know which parts a given deployment wired.
 
 ### Changed
 - **`OneSignalDeeplinkHandler.setup(manager, notifications)` takes the notification manager, not a stream.** The second parameter was `Stream<Map<String, dynamic>>` and is now the `magic_notifications` manager itself, read structurally (`dynamic`) so this package still declares no dependency on that one. `extractData(event)` is new and public: it reads a push event's payload off its `data` member without naming the event's type.

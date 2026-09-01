@@ -212,11 +212,14 @@ Handlers follow the chain-of-responsibility pattern. The first handler where `ca
 
 ## Notification Integration
 
-If `magic_notifications` is installed and bound in the container, `magic_deeplink` automatically registers an `OneSignalDeeplinkHandler` that processes notification click actions containing deep link URLs.
+If `magic_notifications` is installed and bound in the container, `magic_deeplink` automatically registers an `OneSignalDeeplinkHandler` that processes tapped-push actions containing deep link URLs.
 
-No extra configuration needed — the provider detects the binding at boot time and wires everything up.
+No extra configuration needed — the provider detects the binding at boot time and wires everything up. The handler subscribes to the notification manager's own `onPushClicked` stream, which the manager owns from construction and republishes onto whenever a driver attaches later, so the two packages' providers may register in either order.
 
 To send a deep link via OneSignal, add the `url` or `deep_link` field to your notification payload.
+
+> [!NOTE]
+> This wiring reads `NotificationManager.onPushClicked`, which ships in `magic_notifications` 0.1.0. Pairing this release with an older `magic_notifications` leaves the handler reporting an error instead of routing; see [CHANGELOG.md](CHANGELOG.md) for why the two packages cannot enforce this ordering through their pubspecs.
 
 ---
 

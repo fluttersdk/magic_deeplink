@@ -96,7 +96,7 @@ Query parameters are forwarded automatically, so `https://example.com/products/4
 <a name="onesignaldeeplinkhandler"></a>
 ### OneSignalDeeplinkHandler
 
-Bridges OneSignal push notification click events into the deep link pipeline. It does **not** implement `DeeplinkHandler` directly — instead it acts as a listener adapter that extracts a URI from the notification payload and feeds it to the manager.
+Bridges OneSignal push-notification click events into the deep link pipeline. It does **not** implement `DeeplinkHandler` directly — instead it acts as a listener adapter that extracts a URI from the notification payload and feeds it to the manager.
 
 **URI extraction:**
 
@@ -105,10 +105,12 @@ The handler checks the notification `data` map for these keys in order: `url`, `
 **Setup:**
 
 ```dart
-void setup(DeeplinkManager manager, Stream<Map<String, dynamic>> notificationStream)
+void setup(DeeplinkManager manager, dynamic notifications)
 ```
 
-Call `setup()` once, passing the manager singleton and a stream of notification data maps (typically sourced from your `magic_notifications` integration). The handler subscribes internally and routes every matched URI through `manager.handleUri()`.
+Call `setup()` once, passing the manager singleton and the `magic_notifications` notification manager (resolved out of the container, e.g. `app.make('notifications')`). `notifications` is read structurally as `dynamic` so this package declares no dependency on `magic_notifications`. The handler subscribes to the manager's own `onPushClicked` stream, which the manager owns from construction and republishes onto whenever a driver is attached later, so it works whether the notifications provider has booted yet or not. Every matched URI is routed through `manager.handleUri()`.
+
+A notification manager that publishes no `onPushClicked` stream, or an event carrying no readable `data` payload, is reported at error level through magic's `Log` (guarded by `Magic.bound('log')`) rather than thrown or silently dropped.
 
 **Disposal:**
 
@@ -123,10 +125,10 @@ Cancels the internal stream subscription. Call this in your service provider's t
 ```dart
 final onesignalHandler = OneSignalDeeplinkHandler();
 
-// Inside DeeplinkServiceProvider.boot():
+// Inside DeeplinkServiceProvider.boot(), after app.bound('notifications'):
 onesignalHandler.setup(
   DeeplinkManager(),
-  notificationClickStream, // Stream<Map<String, dynamic>>
+  app.make('notifications'), // the magic_notifications manager
 );
 ```
 

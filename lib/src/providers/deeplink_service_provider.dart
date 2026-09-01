@@ -21,6 +21,14 @@ class DeeplinkServiceProvider extends ServiceProvider {
   /// The driver this provider created, when it created one.
   AppLinksDriver? _driver;
 
+  /// Whether [dispose] has run since the last [boot].
+  ///
+  /// [boot] schedules the initial-link read with `Future.delayed(Duration.zero)`
+  /// and cannot cancel a scheduled microtask, so a `dispose()` in the same turn
+  /// leaves that callback to run and route a deep link after teardown. The flag
+  /// is what the callback checks instead.
+  bool _disposed = false;
+
   @override
   void register() {
     app.singleton('deeplinks', () => DeeplinkManager());
@@ -36,18 +44,31 @@ class DeeplinkServiceProvider extends ServiceProvider {
   /// method is idempotent so a consumer may call it without knowing which parts
   /// this deployment actually wired.
   Future<void> dispose() async {
+    _disposed = true;
+
     _pushClicks?.dispose();
     _pushClicks = null;
 
     await _links?.cancel();
     _links = null;
 
-    _driver?.dispose();
-    _driver = null;
+    if (_driver != null) {
+      _driver!.dispose();
+      _driver = null;
+
+      // The manager holds its OWN reference, set by `boot`, and dropping only
+      // this field left the singleton answering `manager.driver` with a driver
+      // this provider had just torn down, with `getInitialLink()` still calling
+      // through it. Harmless only while `AppLinksDriver.dispose()` is an empty
+      // method, which is not a property to depend on.
+      app.make<DeeplinkManager>('deeplinks').forgetDriver();
+    }
   }
 
   @override
   Future<void> boot() async {
+    _disposed = false;
+
     final config = app.make<ConfigRepository>('config');
     final driverName = config.get('deeplink.driver');
     final manager = app.make<DeeplinkManager>('deeplinks');
@@ -65,8 +86,20 @@ class DeeplinkServiceProvider extends ServiceProvider {
 
       // Handle initial link - delay to ensure router is ready
       // Router is initialized after runApp() completes, so we wait for the first frame
+      //
+      // Checked twice against [_disposed], because there is no handle to cancel
+      // a scheduled callback with: once before the read, for a teardown in the
+      // same turn as this boot, and once after it, for a teardown that lands
+      // while `getInitialLink()` is in flight. Without them a `dispose()` still
+      // routes a deep link afterwards, which is the one thing the teardown
+      // cannot otherwise reach.
       Future.delayed(Duration.zero, () async {
+        if (_disposed) return;
+
         final uri = await manager.getInitialLink();
+
+        if (_disposed) return;
+
         if (uri != null) {
           manager.handleUri(uri);
         }

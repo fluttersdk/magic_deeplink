@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:magic/magic.dart';
 import 'package:magic_deeplink/src/deeplink_manager.dart';
+import 'package:magic_deeplink/src/exceptions/deeplink_exception.dart';
 import 'package:magic_deeplink/src/drivers/app_links_driver.dart';
 import 'package:magic_deeplink/src/handlers/deeplink_handler.dart';
 import 'package:magic_deeplink/src/providers/deeplink_service_provider.dart';
@@ -269,6 +270,48 @@ void main() {
 
       await notifications.dispose();
     });
+
+    test('dispose drops the manager\'s driver, not only the provider\'s field',
+        () async {
+      await MagicApp.init(configs: [
+        {
+          'deeplink': {'enabled': true, 'driver': 'app_links'}
+        }
+      ]);
+
+      await app.register(provider);
+      await app.boot();
+
+      final manager = app.make<DeeplinkManager>('deeplinks');
+      expect(manager.driver, isA<AppLinksDriver>());
+
+      await provider.dispose();
+
+      // `boot` calls `manager.setDriver(driver)` on the singleton, so clearing
+      // only the provider's own field left `manager.driver` answering with a
+      // driver this provider had just torn down, and `getInitialLink()` still
+      // calling through it. Harmless only while `AppLinksDriver.dispose()` is
+      // an empty method.
+      //
+      // `driver` raises rather than answering null when nothing is configured,
+      // which is the honest state after a teardown: reaching for it is the
+      // mistake, not the absence.
+      expect(() => manager.driver, throwsA(isA<DeeplinkException>()));
+    });
+
+    // The `_disposed` checks around the scheduled initial-link read are NOT
+    // independently covered, and a test that looked like it covered them would
+    // be worse than this comment. One was written and then deleted: it stayed
+    // green against a build with both checks removed, because `dispose()` also
+    // calls `manager.forgetDriver()`, so the callback's `getInitialLink()`
+    // raises "no driver configured" into a fire-and-forget future that swallows
+    // it, and `handler.handled` is empty either way.
+    //
+    // Isolating the checks needs a `getInitialLink()` that actually answers a
+    // URI, which needs a driver seam `AppLinksDriver` does not have. The checks
+    // stay because relying on that throw IS the swallowed-error shape this
+    // package spent this release removing: an early return is the deliberate
+    // version of the same outcome.
 
     test('dispose completes on a driver-wired provider, and repeats safely',
         () async {

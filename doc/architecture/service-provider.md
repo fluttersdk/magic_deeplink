@@ -155,7 +155,7 @@ This pattern should be followed whenever magic_deeplink optionally integrates wi
 <a name="provider-teardown"></a>
 ## Provider Teardown
 
-`DeeplinkServiceProvider.dispose()` drops everything `boot()` wired: the push-click handler, the driver's link subscription, and the driver itself.
+`DeeplinkServiceProvider.dispose()` drops everything `boot()` wired: the push-click handler, the driver's link subscription, the driver itself, and the manager's own reference to it (`DeeplinkManager.forgetDriver()`, which the manager has always exposed and nothing called). The scheduled initial-link read checks a disposed flag on both sides of its await, since a `Future.delayed` offers no handle to cancel.
 
 ```dart
 await provider.dispose();

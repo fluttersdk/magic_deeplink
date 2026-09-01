@@ -79,6 +79,23 @@ class DeeplinkServiceProvider extends ServiceProvider {
       manager.setDriver(driver);
       await driver.initialize(config.get('deeplink') ?? {});
 
+      // A teardown that landed inside that await already cleared `_driver` and
+      // forgot the manager's, so subscribing now would create a subscription
+      // AFTER the teardown that was supposed to have caught it, and nothing
+      // would ever cancel it. Same class as the scheduled read below, and the
+      // same flag answers it.
+      //
+      // Returns out of `boot` entirely rather than skipping this block, and
+      // that is deliberate: attaching the push-click handler further down to a
+      // provider somebody has torn down is the same defect one block later.
+      // The driver is disposed here because `dispose()` ran before this
+      // assignment and never saw it.
+      if (_disposed) {
+        driver.dispose();
+
+        return;
+      }
+
       // Connect driver stream to manager
       _links = driver.onLink.listen((uri) {
         manager.handleUri(uri);

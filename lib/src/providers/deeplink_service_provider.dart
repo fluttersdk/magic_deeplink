@@ -88,11 +88,14 @@ class DeeplinkServiceProvider extends ServiceProvider {
       // Returns out of `boot` entirely rather than skipping this block, and
       // that is deliberate: attaching the push-click handler further down to a
       // provider somebody has torn down is the same defect one block later.
-      // The driver is disposed here because `dispose()` ran before this
-      // assignment and never saw it.
+      //
+      // The driver is NOT disposed here, and an earlier version of this guard
+      // that did was disposing it twice. `_driver` is assigned before the
+      // await, so the only way to arrive here with the flag set is a teardown
+      // inside that await, and by then `dispose()` has already seen `_driver`,
+      // disposed it and forgotten the manager's. There is no path that reaches
+      // this line holding a driver nobody has torn down.
       if (_disposed) {
-        driver.dispose();
-
         return;
       }
 

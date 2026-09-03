@@ -99,6 +99,7 @@ Every feature, fix, or refactor must go through the red-green-refactor cycle:
 | Forgetting async in boot phase | Driver init, stream setup, initial link fetch — all async |
 | Deferred work for UI context | Use `Future.delayed(Duration.zero, ...)` for post-frame work |
 | Missing stream disposal | `StreamController` should be disposed in provider teardown |
+| Relative paths in `pubspec_overrides.yaml` | Use ABSOLUTE ones. `.worktreeinclude` copies that file into worktrees under `.claude/worktrees/<slug>`, where `../magic` resolves to `.claude/worktrees/magic` and version solving fails on the first path dependency |
 
 ## Skills & Extensions
 

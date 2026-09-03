@@ -38,3 +38,8 @@ pubspec.lock
 .ac/
 # Local development path wiring (never committed; breaks CI which has no sibling paths)
 pubspec_overrides.yaml
+
+# Worktrees Claude Code creates for parallel sessions and isolated subagents.
+# Only this subdirectory: the rest of `.claude/` is tracked, because the rules
+# under it are part of the repository.
+.claude/worktrees/

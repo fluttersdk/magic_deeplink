@@ -250,6 +250,34 @@ void main() {
         isFalse,
       );
     });
+
+    test('dry-run reports the iOS FlutterDeepLinkingEnabled plist key',
+        () async {
+      // Guards install.yaml's native.ios.info_plist entry that switches off
+      // Flutter's own deep link handler on iOS, so it does not fight the
+      // app_links driver this package wires in. Fails until install.yaml
+      // carries the key.
+      _seedProject(tempDir.path);
+
+      final output = BufferedOutput();
+      final ctx = ArtisanContext.bare(
+        MapInput(
+          {
+            'force': false,
+            'dry-run': true,
+            'non-interactive': true,
+            'no-bootstrap': false,
+          },
+          signature: command.parsedSignature,
+        ),
+        output,
+      );
+
+      final exitCode = await command.handle(ctx);
+
+      expect(exitCode, 0);
+      expect(output.content, contains('FlutterDeepLinkingEnabled'));
+    });
   });
 
   // -------------------------------------------------------------------------

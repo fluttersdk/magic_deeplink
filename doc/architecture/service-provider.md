@@ -9,6 +9,7 @@
     - [Initial Link Handling](#initial-link-handling)
     - [OneSignal Handler Setup](#onesignal-handler-setup)
 - [Optional Dependency Handling](#optional-dependency-handling)
+- [Provider Teardown](#provider-teardown)
 - [Registering the Provider](#registering-the-provider)
 - [Related](#related)
 
@@ -26,7 +27,7 @@ The Magic Framework calls providers in two ordered phases:
 
 | Phase | Method | Constraint |
 |-------|--------|------------|
-| 1 | `register()` | Sync. Only bind into the container — no other service may be accessed yet. |
+| 1 | `register()` | Sync. Only bind into the container: no other service may be accessed yet. |
 | 2 | `boot()` | Async. All providers have been registered. Safe to resolve, configure, and wire services. |
 
 Splitting into two phases guarantees that when `boot()` runs, every binding registered by every other provider is already resolvable from the container.
@@ -43,7 +44,7 @@ void register() {
 
 `register()` binds a single singleton into the container under the key `'deeplinks'`. `DeeplinkManager` uses the standard singleton factory pattern (`factory DeeplinkManager() => _instance`), so the closure and the factory both guarantee one shared instance exists for the lifetime of the app.
 
-Nothing else happens here. Config is not read, the driver is not created, and no other service is accessed — all of that is deferred to `boot()`.
+Nothing else happens here. Config is not read, the driver is not created, and no other service is accessed: all of that is deferred to `boot()`.
 
 <a name="boot-phase"></a>
 ## Boot Phase
@@ -54,60 +55,60 @@ Nothing else happens here. Config is not read, the driver is not created, and no
 @override
 Future<void> boot() async {
   final config = app.make<ConfigRepository>('config');
-  final driverName = config.get('deeplink.driver');
   final manager = app.make<DeeplinkManager>('deeplinks');
+
+  if (config.get<bool>('deeplink.enabled') == false) {
+    return;
+  }
+
+  final driverName = config.get<String>('deeplink.driver');
+  final driver = driverName == 'app_links' ? _driverFactory() : null;
 
   // ... driver and handler wiring
 }
 ```
 
+An absent `deeplink.enabled` key means enabled, matching what `doc/getting-started/configuration.md` documents (`Config.get<bool>('deeplink.enabled', true)`); only an explicit `false` skips everything below, including the OneSignal handler setup further down. `_driverFactory` defaults to `AppLinksDriver.new` and is a constructor parameter so a test can substitute a fake; the real driver reads `isSupported` from the host platform, which a test cannot control.
+
 <a name="driver-initialization"></a>
 ### Driver Initialization
 
-The provider reads `deeplink.driver` from config and creates the matching platform driver. Currently the only supported value is `'app_links'`.
+The provider reads `deeplink.driver` from config and creates the matching platform driver. Currently the only supported value is `'app_links'`. The driver is only wired further when it also reports `isSupported`:
 
 ```dart
-if (driverName == 'app_links') {
-  final driver = AppLinksDriver();
+if (driver != null && driver.isSupported) {
   manager.setDriver(driver);
-  await driver.initialize(config.get('deeplink') ?? {});
+  await driver.initialize(config.get<Map<String, dynamic>>('deeplink') ?? {});
 
   // ...
 }
 ```
 
-`driver.initialize()` is awaited — it must complete before the stream is wired or the initial link is fetched. The entire `deeplink` config map is passed to the driver so it can read any platform-specific keys it requires.
+A driver that answers `isSupported == false` (the web arm of `AppLinksDriver`, unconditionally) is never handed to the manager and never initialized: doing so would leave `manager.driver` answering with something that can never deliver a link, and would carry a driver for a mechanism the platform does not have.
+
+`driver.initialize()` is awaited: it must complete before the stream is wired. The entire `deeplink` config map is passed to the driver so it can read any platform-specific keys it requires.
 
 <a name="stream-wiring"></a>
 ### Stream Wiring
 
-After initialization the driver's `onLink` stream is forwarded directly to `manager.handleUri()`:
+After initialization the driver's `onLink` stream is subscribed, and each URI is delivered once the app's first frame has rendered:
 
 ```dart
+final firstFrame = WidgetsFlutterBinding.ensureInitialized().endOfFrame;
+
 driver.onLink.listen((uri) {
-  manager.handleUri(uri);
+  unawaited(_deliver(manager, uri, firstFrame));
 });
 ```
 
-This connects the platform event source to the handler chain. Every URI the driver emits — Universal Links on iOS, App Links on Android — is dispatched through `manager.handleUri()`, which fans the URI out to all registered handlers and emits it on `manager.onLink`.
+`_deliver` awaits `firstFrame`, then calls `manager.handleUri(uri, source: DeeplinkSource.osLink)` inside a `try`/`catch` that reports a failure through magic's `Log` (guarded by `Magic.bound('log')`) rather than letting it escape as an unhandled async error. Every URI the driver emits, Universal Links on iOS and App Links on Android, is dispatched this way, fanning out to all registered handlers and emitting on `manager.onLink`.
 
 <a name="initial-link-handling"></a>
 ### Initial Link Handling
 
-When the app is cold-started from a deep link, the platform holds the URI until it is explicitly fetched. Fetching it synchronously during boot is unsafe because the app's router is not yet mounted at that point — it finishes initializing after `runApp()` returns, which happens after all providers have booted.
+When the app is cold-started from a deep link, `app_links` serves that link as the first emission of the same `onLink` stream the block above already subscribes to (its own documentation describes the stream as carrying "all events: initial link and further"), so there is exactly one delivery path rather than two. An earlier version of this provider also called `manager.getInitialLink()` separately; on Android that read the same cold-start link `app_links` had already put on the stream, so a single tap ran the whole handler chain twice. That separate call is gone. `DeeplinkManager.getInitialLink()` remains on the manager for a consumer that wants to ask directly, and nothing in the provider calls it.
 
-The provider defers the fetch to the next microtask / event-loop turn using `Future.delayed(Duration.zero, ...)`:
-
-```dart
-Future.delayed(Duration.zero, () async {
-  final uri = await manager.getInitialLink();
-  if (uri != null) {
-    manager.handleUri(uri);
-  }
-});
-```
-
-`Duration.zero` schedules the callback after the current frame completes, ensuring the router (and any registered handlers) are fully ready before the initial link is dispatched. `manager.getInitialLink()` caches its result, so repeated calls are safe.
+Fetching the link synchronously during boot would be unsafe regardless: the app's router is not yet mounted at that point, and `_deliver` accounts for this by awaiting `WidgetsFlutterBinding.ensureInitialized().endOfFrame`, captured once before the subscription is created. `endOfFrame` is a stronger guarantee than the `Future.delayed(Duration.zero, ...)` this replaced: it names the event itself (the router finishes building while the first frame is being built) rather than guessing a duration, and it still resolves via `SchedulerBinding`'s own scheduling even when nothing is actively drawing a frame, so a link delivered to an idle application is not left waiting for a frame that never comes.
 
 <a name="onesignal-handler-setup"></a>
 ### OneSignal Handler Setup
@@ -136,14 +137,14 @@ if (app.bound('notifications')) {
 
 The handler is HELD rather than discarded, so [`dispose()`](#provider-teardown) can reach it.
 
-`setup()` takes the notification MANAGER, not a stream, and subscribes to its `onPushClicked` stream, which the manager owns from construction and republishes onto whenever a driver is attached later. That is what makes this independent of provider order: only the `'notifications'` binding needs to exist at this point, never a resolved push driver, because every provider has registered by the time any of them boots. `OneSignalDeeplinkHandler` then extracts a URI from the notification payload (checking keys `url`, `deep_link`, `link`, `uri`) and calls `manager.handleUri()` for any non-null result.
+`setup()` takes the notification MANAGER, not a stream, and subscribes to its `onPushClicked` stream, which the manager owns from construction and republishes onto whenever a driver is attached later. That is what makes this independent of provider order: only the `'notifications'` binding needs to exist at this point, never a resolved push driver, because every provider has registered by the time any of them boots. `OneSignalDeeplinkHandler` then extracts a URI from the notification payload (checking keys `url`, `deep_link`, `link`, `uri`) and calls `manager.handleUri(uri, source: DeeplinkSource.push, payload: data)` for any non-null result, carrying the whole push payload with it.
 
 <a name="optional-dependency-handling"></a>
 ## Optional Dependency Handling
 
 The integration with magic_notifications is entirely optional. The pattern used has three layers of defence:
 
-1. **`app.bound('notifications')`** — guards the entire block. If the plugin was never registered, the block is skipped without error.
+1. **`app.bound('notifications')`**: guards the entire block. If the plugin was never registered, the block is skipped without error.
 2. **`dynamic` resolution inside the handler**: `app.make('notifications')` is handed to the handler untyped, and `OneSignalDeeplinkHandler` reads `onPushClicked` off it structurally rather than importing `magic_notifications` and naming its type. This keeps magic_deeplink free of a hard package dependency. When the bound manager is too old to publish `onPushClicked`, or publishes something that is not a `Stream`, the handler reports the mismatch through magic's `Log` (guarded by `Magic.bound('log')`) instead of throwing, so a notifications version mismatch degrades deep linking rather than breaking app boot.
 
 3. **A `try`/`catch` around the resolution**, reporting at error level through the same `Log` seam. `app.make('notifications')` runs the binding factory and `onPushClicked` is a getter, so either can throw, and the handler only answers `NoSuchMethodError` by name (that one means "this build is too old"). Anything else, a `StateError` out of an uninitialised manager for instance, would otherwise escape. That matters more here than it looks: magic's `Application.boot` awaits providers in a bare loop with no error handling of its own, so an escaping throw does not degrade deep linking, it aborts app boot and every provider registered after this one, over a plugin that is optional by design.
@@ -155,7 +156,7 @@ This pattern should be followed whenever magic_deeplink optionally integrates wi
 <a name="provider-teardown"></a>
 ## Provider Teardown
 
-`DeeplinkServiceProvider.dispose()` drops everything `boot()` wired: the push-click handler, the driver's link subscription, the driver itself, and the manager's own reference to it (`DeeplinkManager.forgetDriver()`, which the manager has always exposed and nothing called). The scheduled initial-link read checks a disposed flag on both sides of its await, since a `Future.delayed` offers no handle to cancel.
+`DeeplinkServiceProvider.dispose()` drops everything `boot()` wired: the push-click handler, the driver's link subscription, the driver itself, and the manager's own reference to it (`DeeplinkManager.forgetDriver()`, which the manager has always exposed and nothing called). `_deliver` checks a `_disposed` flag on both sides of its await, since an in-flight delivery waiting on `endOfFrame` has no handle a teardown could cancel it through.
 
 ```dart
 await provider.dispose();
@@ -179,6 +180,7 @@ Map<String, dynamic> get appConfig => {
     ],
   },
   'deeplink': {
+    'enabled': true,
     'driver': 'app_links',
     // platform-specific keys passed through to driver.initialize()
   },
@@ -190,7 +192,7 @@ The provider's position relative to any provider registering `'notifications'` d
 <a name="related"></a>
 ## Related
 
-- [DeeplinkManager](https://magic.fluttersdk.com/packages/deeplink/architecture/deeplink-manager) — singleton manager: handler chain, stream, initial link cache
-- [Drivers](https://magic.fluttersdk.com/packages/deeplink/basics/drivers) — platform driver wrapping the `app_links` package
-- [Handlers](https://magic.fluttersdk.com/packages/deeplink/basics/handlers) — notification-to-URI bridge
-- [Magic Framework — Service Providers](https://magic.fluttersdk.com/getting-started/service-providers) — two-phase lifecycle reference
+- [DeeplinkManager](https://magic.fluttersdk.com/packages/deeplink/architecture/deeplink-manager): singleton manager: handler chain, stream, initial link cache
+- [Drivers](https://magic.fluttersdk.com/packages/deeplink/basics/drivers): platform driver wrapping the `app_links` package
+- [Handlers](https://magic.fluttersdk.com/packages/deeplink/basics/handlers): notification-to-URI bridge
+- [Magic Framework: Service Providers](https://magic.fluttersdk.com/getting-started/service-providers): two-phase lifecycle reference

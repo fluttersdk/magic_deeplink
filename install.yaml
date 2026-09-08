@@ -22,6 +22,19 @@ magic:
   provider: DeeplinkServiceProvider
   config_factory: deeplinkConfig
 
+# Flutter's own deep link handler fights the app_links driver this package
+# wires in, so the iOS switch that turns it off is applied for every new
+# adopter. The equivalent Android switch (`flutter_deeplinking_enabled` false)
+# is NOT automated here: it belongs inside <activity> in AndroidManifest.xml,
+# and the XmlEditor this installer runs on only inserts <meta-data> into
+# <application>, so an automated entry would land in the wrong element and
+# read as applied while doing nothing. See
+# doc/getting-started/installation.md for the manual Android step.
+native:
+  ios:
+    info_plist:
+      FlutterDeepLinkingEnabled: false
+
 post_install:
   message: |
     magic_deeplink installed. Bootstrap workflow:
@@ -31,11 +44,12 @@ post_install:
 
     2. Register deeplink handlers in a ServiceProvider boot() body:
 
-         Deeplink.register('/users/:id', UserDeeplinkHandler.new);
-         Deeplink.register('/orders/:id', OrderDeeplinkHandler.new);
+         DeeplinkManager().registerHandler(
+           RouteDeeplinkHandler(paths: ['/users/:id', '/orders/:id']),
+         );
 
-    3. Write each deeplink handler class by hand (implement canHandle + handle)
-       and register it as shown in step 2. There is no handler generator.
+    3. Write each custom handler class by hand (implement canHandle + handle)
+       and register it the same way. There is no handler generator.
 
     4. Generate the platform association files (apple-app-site-association,
        assetlinks.json) when you are ready to deploy:

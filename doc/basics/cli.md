@@ -14,7 +14,7 @@ Magic Deeplink ships a CLI that scaffolds deep link configuration into your proj
 All commands are run via Dart's `run` mechanism:
 
 ```bash
-dart run magic_deeplink:<command> [options]
+dart run <app>:artisan deeplink:<command> [options]
 ```
 
 <a name="commands"></a>
@@ -26,8 +26,8 @@ dart run magic_deeplink:<command> [options]
 Scaffolds the deep link configuration file into the host project and wires it into the Magic app bootstrap automatically.
 
 ```bash
-dart run magic_deeplink:install
-dart run magic_deeplink:install --force
+dart run <app>:artisan deeplink:install
+dart run <app>:artisan deeplink:install --force
 ```
 
 #### What it does
@@ -63,7 +63,7 @@ All injections are idempotent — running the command twice does not duplicate e
 Generates the server-side deep link verification files: `apple-app-site-association` for iOS Universal Links and `assetlinks.json` for Android App Links.
 
 ```bash
-dart run magic_deeplink:generate \
+dart run <app>:artisan deeplink:generate \
   --team-id ABCDE12345 \
   --bundle-id com.example.app \
   --package-name com.example.app \

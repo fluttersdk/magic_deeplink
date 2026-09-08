@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import 'handlers/deeplink_handler.dart';
 import 'drivers/deeplink_driver.dart';
 import 'exceptions/deeplink_exception.dart';
@@ -15,8 +17,7 @@ class DeeplinkManager {
 
   final List<DeeplinkHandler> _handlers = [];
   DeeplinkDriver? _driver;
-  final StreamController<Uri> _linkController =
-      StreamController<Uri>.broadcast();
+  StreamController<Uri> _linkController = StreamController<Uri>.broadcast();
   Uri? _initialLink;
   bool _initialLinkFetched = false;
 
@@ -75,14 +76,44 @@ class DeeplinkManager {
   }
 
   /// Handles the given URI by delegating to the first matching handler.
+  ///
+  /// [source] travels with the URI all the way to the handler, because the
+  /// decision a handler has to make about a crafted link cannot be made from
+  /// the link. [payload] is the whole payload the instruction arrived with,
+  /// which only a push has.
+  ///
   /// Returns true if a handler was found and successfully handled the URI.
-  Future<bool> handleUri(Uri uri) async {
+  Future<bool> handleUri(
+    Uri uri, {
+    required DeeplinkSource source,
+    Map<String, dynamic>? payload,
+  }) async {
     _linkController.add(uri);
     for (final handler in _handlers) {
       if (handler.canHandle(uri)) {
-        return await handler.handle(uri);
+        return await handler.handle(uri, source: source, payload: payload);
       }
     }
     return false;
+  }
+
+  /// Returns this singleton to the state it was constructed in.
+  ///
+  /// The manager outlives an application in a test binary, and two pieces of
+  /// its state outlive [forgetDriver] as well: the cached initial link, which
+  /// makes a second [getInitialLink] answer the previous test's URI without
+  /// ever reaching the driver, and the broadcast controller behind [onLink],
+  /// which nothing has ever closed. Both are dropped here, and [onLink] hands
+  /// out a fresh stream afterwards.
+  @visibleForTesting
+  void reset() {
+    forgetHandlers();
+    forgetDriver();
+
+    _initialLink = null;
+    _initialLinkFetched = false;
+
+    unawaited(_linkController.close());
+    _linkController = StreamController<Uri>.broadcast();
   }
 }

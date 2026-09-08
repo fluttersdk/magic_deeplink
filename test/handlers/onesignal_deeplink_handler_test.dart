@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:magic/magic.dart';
 import 'package:magic_deeplink/src/deeplink_manager.dart';
+import 'package:magic_deeplink/src/handlers/deeplink_handler.dart';
 import 'package:magic_deeplink/src/handlers/onesignal_deeplink_handler.dart';
 
 /// A push click event shaped like `magic_notifications`' `PushNotificationEvent`.
@@ -62,9 +63,21 @@ class RecordingDeeplinkManager implements DeeplinkManager {
   /// The URIs this manager was handed, in order.
   final List<Uri> handled = [];
 
+  /// The provenance each URI arrived with, in the same order.
+  final List<DeeplinkSource> sources = [];
+
+  /// The payload each URI arrived with, in the same order.
+  final List<Map<String, dynamic>?> payloads = [];
+
   @override
-  Future<bool> handleUri(Uri uri) async {
+  Future<bool> handleUri(
+    Uri uri, {
+    required DeeplinkSource source,
+    Map<String, dynamic>? payload,
+  }) async {
     handled.add(uri);
+    sources.add(source);
+    payloads.add(payload);
 
     return true;
   }
@@ -131,6 +144,30 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(deeplinks.handled, [Uri.parse('https://uptizm.com/incidents/42')]);
+
+      await notifications.dispose();
+    });
+
+    test(
+        'a push click arrives as DeeplinkSource.push carrying the whole '
+        'payload', () async {
+      final notifications = FakeNotificationManager();
+
+      handler.setup(deeplinks, notifications);
+      notifications.publishClick({
+        'deep_link': '/incidents/1',
+        'team_id': 't-9',
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      // The link alone is not enough. A consumer decides whether to act on
+      // `team_id` by asking where the instruction came from, and it can only
+      // read the key if the bridge forwards the payload the server authored
+      // rather than the one key it needed to build the URI.
+      expect(deeplinks.sources, [DeeplinkSource.push]);
+      expect(deeplinks.payloads, [
+        {'deep_link': '/incidents/1', 'team_id': 't-9'},
+      ]);
 
       await notifications.dispose();
     });

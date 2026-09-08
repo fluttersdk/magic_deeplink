@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:magic/magic.dart';
 
 import '../deeplink_manager.dart';
+import 'deeplink_handler.dart';
 
 /// **Turns a tapped push notification into a deep link.**
 ///
@@ -114,7 +115,7 @@ class OneSignalDeeplinkHandler {
     if (clicks == null) return;
 
     _subscription = clicks.listen(
-      (event) => _route(manager, event),
+      (event) => unawaited(_route(manager, event)),
       onError: (Object error) => _report(
         'The push click stream failed, so a tapped notification may not have '
         'opened its deep link: $error',
@@ -163,7 +164,13 @@ class OneSignalDeeplinkHandler {
   }
 
   /// Hand the deep link carried by [event], if any, to [manager].
-  void _route(DeeplinkManager manager, dynamic event) {
+  ///
+  /// The WHOLE payload goes with it, not the one key the URI was read from: a
+  /// consumer acts on keys this package has never heard of (`team_id`, say),
+  /// and it may only do that because [DeeplinkSource.push] says the server
+  /// authored them. An OS link reaches the same handler with no payload at
+  /// all, which is what keeps a crafted link from carrying those keys.
+  Future<void> _route(DeeplinkManager manager, dynamic event) async {
     final Map<String, dynamic>? data = extractData(event);
 
     if (data == null) return;
@@ -174,7 +181,18 @@ class OneSignalDeeplinkHandler {
     // notifications are meant to be read, not navigated to.
     if (uri == null) return;
 
-    manager.handleUri(uri);
+    // Awaited inside a try rather than left to run unattended, because nothing
+    // is waiting on this future: a handler that throws (a router that is not
+    // built yet answers with a StateError) would otherwise leave the zone as an
+    // unhandled async error and take a tapped notification with it.
+    try {
+      await manager.handleUri(uri, source: DeeplinkSource.push, payload: data);
+    } catch (error) {
+      _report(
+        'Routing the deep link a tapped push carried failed, so the '
+        'notification did not open $uri: $error',
+      );
+    }
   }
 
   /// Report [message] at error level, when the host has a log to report to.

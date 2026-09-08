@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:magic_deeplink/src/handlers/deeplink_handler.dart';
 import 'package:magic_deeplink/src/handlers/route_deeplink_handler.dart';
 
 void main() {
@@ -48,7 +49,7 @@ void main() {
       // it throws a StateError. Catching this error confirms that MagicRoute.to()
       // was indeed called by the handler.
       expect(
-        () async => await handler.handle(uri),
+        () async => await handler.handle(uri, source: DeeplinkSource.osLink),
         throwsA(isA<StateError>().having(
           (e) => e.message,
           'message',

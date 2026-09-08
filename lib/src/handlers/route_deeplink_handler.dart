@@ -37,8 +37,17 @@ class RouteDeeplinkHandler extends DeeplinkHandler {
     return _patterns.any((p) => p.hasMatch(path));
   }
 
+  /// Navigates to the path [uri] names.
+  ///
+  /// [source] and [payload] are deliberately unused: routing to a path the
+  /// consumer listed is safe whoever asked for it. A handler that acts on the
+  /// payload is the consumer's to write, and it is the one that reads [source].
   @override
-  Future<bool> handle(Uri uri) async {
+  Future<bool> handle(
+    Uri uri, {
+    required DeeplinkSource source,
+    Map<String, dynamic>? payload,
+  }) async {
     MagicRoute.to(uri.path, query: uri.queryParameters);
     return true;
   }

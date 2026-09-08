@@ -9,20 +9,36 @@ class MockDeeplinkHandler extends DeeplinkHandler {
   final bool handleValue;
   bool handleCalled = false;
 
+  /// The provenance the last call arrived with.
+  DeeplinkSource? handledSource;
+
+  /// The payload the last call arrived with.
+  Map<String, dynamic>? handledPayload;
+
   MockDeeplinkHandler({this.canHandleValue = true, this.handleValue = true});
 
   @override
   bool canHandle(Uri uri) => canHandleValue;
 
   @override
-  Future<bool> handle(Uri uri) async {
+  Future<bool> handle(
+    Uri uri, {
+    required DeeplinkSource source,
+    Map<String, dynamic>? payload,
+  }) async {
     handleCalled = true;
+    handledSource = source;
+    handledPayload = payload;
+
     return handleValue;
   }
 }
 
 class MockDeeplinkDriver extends DeeplinkDriver {
   final Uri? initialLink;
+
+  /// How many times the manager reached through to the driver for it.
+  int initialLinkCalls = 0;
 
   MockDeeplinkDriver({this.initialLink});
 
@@ -39,7 +55,11 @@ class MockDeeplinkDriver extends DeeplinkDriver {
   Future<void> initialize(Map<String, dynamic> config) async {}
 
   @override
-  Future<Uri?> getInitialLink() async => initialLink;
+  Future<Uri?> getInitialLink() async {
+    initialLinkCalls++;
+
+    return initialLink;
+  }
 
   @override
   Future<void> dispose() async {}
@@ -51,8 +71,7 @@ void main() {
 
     setUp(() {
       manager = DeeplinkManager();
-      manager.forgetHandlers(); // Clear handlers between tests
-      manager.forgetDriver(); // Clear driver between tests
+      manager.reset();
     });
 
     test('is a singleton', () {
@@ -102,7 +121,10 @@ void main() {
       manager.registerHandler(handler2);
       manager.registerHandler(handler3);
 
-      final result = await manager.handleUri(Uri.parse('https://example.com'));
+      final result = await manager.handleUri(
+        Uri.parse('https://example.com'),
+        source: DeeplinkSource.osLink,
+      );
 
       expect(result, isTrue);
       expect(handler1.handleCalled, isFalse);
@@ -110,11 +132,32 @@ void main() {
       expect(handler3.handleCalled, isFalse);
     });
 
+    test('handleUri hands the handler the provenance and the payload',
+        () async {
+      final handler = MockDeeplinkHandler();
+      manager.registerHandler(handler);
+
+      await manager.handleUri(
+        Uri.parse('https://uptizm.com/incidents/1'),
+        source: DeeplinkSource.push,
+        payload: {'deep_link': '/incidents/1', 'team_id': 't-9'},
+      );
+
+      expect(handler.handledSource, DeeplinkSource.push);
+      expect(
+        handler.handledPayload,
+        {'deep_link': '/incidents/1', 'team_id': 't-9'},
+      );
+    });
+
     test('handleUri returns false if no handler matches', () async {
       final handler = MockDeeplinkHandler(canHandleValue: false);
       manager.registerHandler(handler);
 
-      final result = await manager.handleUri(Uri.parse('https://example.com'));
+      final result = await manager.handleUri(
+        Uri.parse('https://example.com'),
+        source: DeeplinkSource.osLink,
+      );
 
       expect(result, isFalse);
       expect(handler.handleCalled, isFalse);
@@ -125,7 +168,7 @@ void main() {
 
       expectLater(manager.onLink, emits(uri));
 
-      await manager.handleUri(uri);
+      await manager.handleUri(uri, source: DeeplinkSource.manual);
     });
 
     test('getInitialLink returns initial link from driver', () async {
@@ -146,9 +189,49 @@ void main() {
       await manager.getInitialLink();
       await manager.getInitialLink();
 
-      // In a real mock we'd count calls, but here we just verify it still returns the value.
-      // The implementation details of caching are verified by code inspection or a more complex mock if needed.
       expect(await manager.getInitialLink(), equals(uri));
+      expect(driver.initialLinkCalls, 1);
+    });
+
+    test('reset drops the cached initial link the singleton would keep',
+        () async {
+      final driver = MockDeeplinkDriver(
+        initialLink: Uri.parse('https://example.com'),
+      );
+      manager.setDriver(driver);
+      await manager.getInitialLink();
+
+      // `forgetDriver` alone leaves the cache behind, so the next application
+      // built in the same test binary answers with the previous one's link and
+      // never reaches its own driver.
+      manager.reset();
+
+      final second = MockDeeplinkDriver(
+        initialLink: Uri.parse('https://uptizm.com/incidents/1'),
+      );
+      manager.setDriver(second);
+
+      expect(
+        await manager.getInitialLink(),
+        Uri.parse('https://uptizm.com/incidents/1'),
+      );
+      expect(second.initialLinkCalls, 1);
+    });
+
+    test('reset closes the link stream and opens a fresh one', () async {
+      final closed = manager.onLink;
+
+      expectLater(closed, emitsDone);
+      manager.reset();
+
+      // The controller is a broadcast one nothing ever closed, so a listener
+      // from a torn-down application kept receiving links from the next.
+      expectLater(manager.onLink, emits(Uri.parse('https://example.com')));
+
+      await manager.handleUri(
+        Uri.parse('https://example.com'),
+        source: DeeplinkSource.manual,
+      );
     });
   });
 }

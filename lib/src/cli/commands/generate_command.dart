@@ -167,8 +167,11 @@ class GenerateCommand extends ArtisanCommand {
       config['packageName'] = packageNameMatch.group(1);
     }
 
+    // Tolerate a generic type annotation between the colon and the opening
+    // bracket (`<String>[...]`), which is how uptizm's own config writes a
+    // typed Dart list literal.
     final fingerprintsMatch = RegExp(
-      r"'sha256_fingerprints':\s*\[(.*?)\]",
+      r"'sha256_fingerprints':\s*(?:<[^>]+>)?\s*\[(.*?)\]",
       dotAll: true,
     ).firstMatch(content);
     if (fingerprintsMatch != null) {
@@ -181,7 +184,7 @@ class GenerateCommand extends ArtisanCommand {
     }
 
     final pathsMatch = RegExp(
-      r"'paths':\s*\[(.*?)\]",
+      r"'paths':\s*(?:<[^>]+>)?\s*\[(.*?)\]",
       dotAll: true,
     ).firstMatch(content);
     if (pathsMatch != null) {
@@ -195,9 +198,15 @@ class GenerateCommand extends ArtisanCommand {
 
   /// Build the apple-app-site-association JSON map for iOS Universal Links.
   ///
+  /// Emits exactly one `details` entry in Apple's modern `appIDs` +
+  /// `components` shape (TN3155). The legacy `appID` + `paths` shape and the
+  /// `apps` key are never emitted, because Apple's guidance warns that mixing
+  /// the two schemas may produce unexpected behaviour for universal links.
+  ///
   /// @param teamId    Apple Developer Team ID.
   /// @param bundleId  iOS app bundle identifier.
-  /// @param paths     Universal Link paths to register (e.g. `['/*']`).
+  /// @param paths     Universal Link path patterns to register (e.g.
+  ///                  `['/*']`), passed through unchanged into `components`.
   /// @return A [Map<String, dynamic>] ready for JSON serialisation.
   Map<String, dynamic> buildAppleAppSiteAssociation(
     String teamId,
@@ -206,9 +215,16 @@ class GenerateCommand extends ArtisanCommand {
   ) {
     return {
       'applinks': {
-        'apps': <dynamic>[],
         'details': [
-          {'appID': '$teamId.$bundleId', 'paths': paths},
+          {
+            'appIDs': ['$teamId.$bundleId'],
+            'components': paths.map((path) {
+              return {
+                '/': path,
+                'comment': 'Matches any URL whose path matches $path',
+              };
+            }).toList(),
+          },
         ],
       },
     };

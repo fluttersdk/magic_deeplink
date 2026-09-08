@@ -17,14 +17,13 @@ class AppLinksDriver extends DeeplinkDriver {
   @override
   String get name => 'app_links';
 
+  /// No try/catch: this file compiles only where `dart.library.io` resolves,
+  /// so `Platform` is real here and these getters cannot throw. The guard this
+  /// replaced existed to survive the web build, and the web arm now takes that
+  /// case instead.
   @override
-  bool get isSupported {
-    try {
-      return Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
-    } catch (_) {
-      return false;
-    }
-  }
+  bool get isSupported =>
+      Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 
   @override
   Future<void> initialize(Map<String, dynamic> config) async {

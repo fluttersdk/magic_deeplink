@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.1.0] - 2026-09-09
 
 ### Added
 - **The web build stops carrying an inert `dart:io` import.** `AppLinksDriver` was a single class reaching for `Platform.isAndroid`/`isIOS`/`isMacOS` inside a `try`/`catch`, which only worked at all because `dart:io` happens to resolve (to a stub) under `dart2js`/`dart2wasm`. It is now a conditional-export barrel over three arms: an io arm that still wraps the `app_links` package and answers `isSupported` from the same three platform checks, a web arm, and a stub arm for anything else. Both the web and the stub arm answer every member without touching a platform channel: `isSupported` false, `getInitialLink()` null, `onLink` an empty stream, `initialize` and `dispose` no-ops. The web arm is deliberately inert rather than wired to `app_links_web`: that package reads the boot-time `location.href` once and never reacts to later navigation, and GoRouter already owns the address bar under this app's path url strategy, so routing the same URI twice would be the bug, not the fix.

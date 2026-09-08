@@ -231,7 +231,7 @@ The recommended place to register handlers is inside `DeeplinkServiceProvider.bo
 class DeeplinkServiceProvider extends ServiceProvider {
   @override
   Future<void> boot() async {
-    final manager = app.make<DeeplinkManager>('deeplink');
+    final manager = app.make<DeeplinkManager>('deeplinks');
 
     manager.registerHandler(
       RouteDeeplinkHandler(

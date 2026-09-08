@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **`deeplink:doctor` command.** `magic_notifications` and `magic_starter` each ship a doctor; this plugin shipped none, and it needed one most. The install has a half no manifest installer can automate (an `<intent-filter>` inside a specific `<activity>`, a `<meta-data>` on the right element), and every way of getting that hand-written half wrong is silent: a deep link simply opens the browser, with no exception and no log line anywhere. The command reads the consumer's `lib/config/deeplink.dart` (reusing `GenerateCommand.parseDeeplinkConfig` rather than a second parser), rejects scaffold placeholders left over from install, and checks both platforms structurally rather than by substring search: it parses the Android manifest's element tree so a `flutter_deeplinking_enabled` meta-data placed on `<application>` instead of `<activity>` is caught, a case a plain `grep` cannot see because both locations contain the identical text. It also validates the `autoVerify` intent-filter's `http`/`https` schemes and host, the iOS entitlements' `applinks:` host, `FlutterDeepLinkingEnabled`, and that the generated `apple-app-site-association`/`assetlinks.json` files agree with the config (warning rather than failing on a legacy+modern AASA format mix, per Apple's TN3155). All checks are local and read-only by default; `--remote` additionally fetches both association files from the live domain to confirm the server agrees with the repo. The report always closes by naming what no local or remote check can prove: that a real device matches the link, since `swcutil verify` needs root and Android verifies at install time.
+
 ## [0.1.0] - 2026-09-09
 
 ### Added

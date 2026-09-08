@@ -19,5 +19,10 @@ void main() {
       final command = GenerateCommand();
       expect(command, isNotNull);
     });
+
+    test('DoctorCommand is accessible via barrel', () {
+      final command = DoctorCommand();
+      expect(command, isNotNull);
+    });
   });
 }

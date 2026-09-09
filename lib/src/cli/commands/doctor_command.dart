@@ -232,6 +232,103 @@ class DoctorCommand extends ArtisanCommand {
   }
 
   // ---------------------------------------------------------------------------
+  // Dart wiring
+  // ---------------------------------------------------------------------------
+
+  /// Whether the Dart half of the install actually reached the app.
+  ///
+  /// Every other section here checks a platform file, and all of them can pass
+  /// on a project where this package is a dependency and nothing more: the
+  /// entitlement, the intent filter and both association files are correct, the
+  /// domain resolves, and no link ever opens the app because no provider was
+  /// registered. That is the state a half-applied install leaves behind, and
+  /// it is also what a human gets by adding the dependency by hand, so a green
+  /// report that cannot see it is the most misleading answer this command can
+  /// give.
+  ///
+  /// Three things, each of which alone makes the feature inert:
+  /// the provider in `lib/config/app.dart`, the config factory in
+  /// `lib/main.dart`, and at least one `registerHandler` call somewhere under
+  /// `lib/`. The last is a WARNING rather than a failure: a consumer may
+  /// register handlers from a provider this scan cannot recognise, and failing
+  /// a correct project is worse than under-reporting on an unusual one.
+  Map<String, dynamic> checkWiring() {
+    final issues = <String>[];
+    final warnings = <String>[];
+
+    final appConfig = '$projectRoot/lib/config/app.dart';
+    if (!FileHelper.fileExists(appConfig)) {
+      issues.add('lib/config/app.dart not found, so the provider list could '
+          'not be read');
+    } else if (!_mentions(appConfig, 'DeeplinkServiceProvider')) {
+      issues.add('DeeplinkServiceProvider is not registered in '
+          'lib/config/app.dart. Without it no driver is created and no link '
+          'ever reaches a handler.');
+    }
+
+    final main = '$projectRoot/lib/main.dart';
+    if (!FileHelper.fileExists(main)) {
+      issues.add('lib/main.dart not found, so the config factory could not be '
+          'read');
+    } else if (!_mentions(main, 'deeplinkConfig')) {
+      issues.add('deeplinkConfig is not passed to Magic.init in lib/main.dart. '
+          'Every value this report just validated is then invisible at '
+          'runtime.');
+    }
+
+    if (!_libMentions('registerHandler(')) {
+      warnings.add('No registerHandler( call found under lib/. A link that '
+          'reaches the manager with no handler registered is dropped without '
+          'an error. Ignore this if handlers are registered somewhere this '
+          'scan cannot see.');
+    }
+
+    return {
+      'configured': issues.isEmpty,
+      'exists': true,
+      'issues': issues,
+      'warnings': warnings,
+    };
+  }
+
+  /// Whether [path] contains [needle] outside a `//` line comment.
+  ///
+  /// Comments are stripped for the same reason the Android checks strip XML
+  /// ones: a commented-out registration reads identically to a live one, and
+  /// that is exactly the state a half-finished install leaves behind.
+  bool _mentions(String path, String needle) =>
+      _stripLineComments(FileHelper.readFile(path)).contains(needle);
+
+  /// Whether any Dart file under `lib/` contains [needle], comments aside.
+  bool _libMentions(String needle) {
+    final lib = Directory('$projectRoot/lib');
+    if (!lib.existsSync()) return false;
+
+    for (final entity in lib.listSync(recursive: true)) {
+      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+
+      try {
+        if (_stripLineComments(entity.readAsStringSync()).contains(needle)) {
+          return true;
+        }
+      } on FileSystemException {
+        // An unreadable file is not evidence of absence, and refusing to
+        // finish the sweep over one would turn a permissions quirk into a
+        // failed doctor run.
+        continue;
+      }
+    }
+
+    return false;
+  }
+
+  /// [source] with `//` line comments removed.
+  String _stripLineComments(String source) => source.split('\n').map((line) {
+        final marker = line.indexOf('//');
+        return marker == -1 ? line : line.substring(0, marker);
+      }).join('\n');
+
+  // ---------------------------------------------------------------------------
   // Platform setup
   // ---------------------------------------------------------------------------
 
@@ -244,7 +341,7 @@ class DoctorCommand extends ArtisanCommand {
   Map<String, dynamic> checkPlatformSetup() {
     final config = _loadConfig();
     final platforms = PlatformHelper.detectPlatforms(projectRoot);
-    final result = <String, dynamic>{};
+    final result = <String, dynamic>{'wiring': checkWiring()};
 
     if (platforms.contains('ios')) {
       result['ios'] = _checkIosSetup(config);
@@ -937,6 +1034,7 @@ class DoctorCommand extends ArtisanCommand {
 
   /// Human title for a [checkPlatformSetup] section key.
   String _sectionTitle(String section) => switch (section) {
+        'wiring' => 'Dart Wiring',
         'ios' => 'iOS Setup',
         'android' => 'Android Setup',
         'associations' => 'Association Files',

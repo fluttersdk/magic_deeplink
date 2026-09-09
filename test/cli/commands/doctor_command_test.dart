@@ -229,8 +229,50 @@ void _writeAssociationFiles(
 
 /// Assembles a fully valid project (config + iOS + Android + associations)
 /// under [tempDir] using a shared identity across every file.
+/// The Dart half of the install: the provider, the config factory, and a
+/// handler registration.
+///
+/// Each is written independently so a test can leave exactly one out, which is
+/// the state that makes every platform check pass while no link opens the app.
+void _writeDartWiring(
+  Directory tempDir, {
+  bool includeProvider = true,
+  bool includeConfigFactory = true,
+  bool includeHandler = true,
+}) {
+  Directory('${tempDir.path}/lib/config').createSync(recursive: true);
+
+  File('${tempDir.path}/lib/config/app.dart').writeAsStringSync('''
+Map<String, dynamic> get appConfig => {
+  'providers': [
+    (app) => RouteServiceProvider(app),
+${includeProvider ? '    (app) => DeeplinkServiceProvider(app),\n' : ''}  ],
+};
+''');
+
+  File('${tempDir.path}/lib/main.dart').writeAsStringSync('''
+Future<void> main() async {
+  await Magic.init(
+    configs: [
+      appConfig,
+${includeConfigFactory ? '      deeplinkConfig,\n' : ''}    ],
+  );
+}
+''');
+
+  if (includeHandler) {
+    Directory('${tempDir.path}/lib/app').createSync(recursive: true);
+    File('${tempDir.path}/lib/app/deeplinks.dart').writeAsStringSync('''
+void registerDeeplinks(DeeplinkManager manager) {
+  manager.registerHandler(AppDeeplinkHandler());
+}
+''');
+  }
+}
+
 void _writeFullyConfiguredProject(Directory tempDir) {
   _writeValidConfig(tempDir);
+  _writeDartWiring(tempDir);
   _writeIosProject(tempDir);
   _writeAndroidManifest(tempDir);
   _writeAssociationFiles(tempDir);
@@ -390,6 +432,76 @@ Map<String, dynamic> get deeplinkConfig => {
   // ---------------------------------------------------------------------------
   // 3 + 4: iOS setup
   // ---------------------------------------------------------------------------
+
+  group('Dart wiring', () {
+    // The state each of these pins is the one every other section of this
+    // report is blind to: platform files perfect, domain resolving, and no
+    // link reaching the app because the Dart half never landed.
+    test('reports a provider missing from lib/config/app.dart', () {
+      _writeValidConfig(tempDir);
+      _writeDartWiring(tempDir, includeProvider: false);
+
+      expect(
+        (command.checkWiring()['issues'] as List<String>)
+            .any((i) => i.contains('DeeplinkServiceProvider')),
+        isTrue,
+      );
+      expect(command.checkWiring()['configured'], isFalse);
+    });
+
+    test('reports deeplinkConfig missing from lib/main.dart', () {
+      _writeValidConfig(tempDir);
+      _writeDartWiring(tempDir, includeConfigFactory: false);
+
+      expect(
+        (command.checkWiring()['issues'] as List<String>)
+            .any((i) => i.contains('deeplinkConfig')),
+        isTrue,
+      );
+    });
+
+    test('warns rather than fails when no handler is registered', () {
+      _writeValidConfig(tempDir);
+      _writeDartWiring(tempDir, includeHandler: false);
+
+      final wiring = command.checkWiring();
+
+      // A consumer may register handlers somewhere this scan cannot recognise,
+      // and failing a correct project is worse than under-reporting.
+      expect(wiring['issues'], isEmpty);
+      expect(
+        (wiring['warnings'] as List<String>)
+            .any((w) => w.contains('registerHandler')),
+        isTrue,
+      );
+    });
+
+    test('a commented-out provider does not count as registered', () {
+      _writeValidConfig(tempDir);
+      _writeDartWiring(tempDir, includeProvider: false);
+      File('${tempDir.path}/lib/config/app.dart').writeAsStringSync('''
+Map<String, dynamic> get appConfig => {
+  'providers': [
+    // (app) => DeeplinkServiceProvider(app),
+  ],
+};
+''');
+
+      expect(
+        (command.checkWiring()['issues'] as List<String>)
+            .any((i) => i.contains('DeeplinkServiceProvider')),
+        isTrue,
+      );
+    });
+
+    test('a wired project reports no issues', () {
+      _writeValidConfig(tempDir);
+      _writeDartWiring(tempDir);
+
+      expect(command.checkWiring()['issues'], isEmpty);
+      expect(command.checkWiring()['warnings'], isEmpty);
+    });
+  });
 
   group('iOS setup', () {
     List<String> iosIssues() => command
@@ -681,6 +793,8 @@ Map<String, dynamic> get deeplinkConfig => {
 
     test('a warning-only project exits 0', () async {
       _writeValidConfig(tempDir);
+      // Wired, so the only finding left is the legacy-format warning below.
+      _writeDartWiring(tempDir);
       _writeAssociationFiles(tempDir, mixLegacyFormat: true);
       final output = BufferedOutput();
       final ctx = ArtisanContext.bare(

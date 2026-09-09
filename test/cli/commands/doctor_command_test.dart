@@ -139,14 +139,45 @@ void _writeAndroidManifest(
   bool includeHttpScheme = true,
   bool includeHttpsScheme = true,
   String? host,
+  // Android accepts both spellings; requiring the self-closing one failed a
+  // correct manifest.
+  bool explicitCloseTag = false,
+  // A `<meta-data>` inside a `<provider>`, which is not a direct child of
+  // `<application>` however much a narrow strip makes it look like one.
+  bool providerWithMetaData = false,
+  // Intent filters on an `<activity-alias>` rather than an `<activity>`.
+  bool useActivityAlias = false,
 }) {
   Directory('${tempDir.path}/android/app/src/main').createSync(recursive: true);
 
-  final deepLinkingMetaData = '''
+  final deepLinkingMetaData = explicitCloseTag
+      ? '''
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false"></meta-data>
+'''
+      : '''
             <meta-data
                 android:name="flutter_deeplinking_enabled"
                 android:value="false"/>
 ''';
+
+  // Carries the SAME meta-data name, which is what makes this discriminate: a
+  // provider holding an unrelated one is invisible to a check that looks for
+  // `flutter_deeplinking_enabled` by name, so it would pass either way and
+  // prove nothing about the strip.
+  final provider = providerWithMetaData
+      ? '''
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="\${applicationId}.androidx-startup"
+            android:exported="false">
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="true"/>
+        </provider>
+'''
+      : '';
 
   final autoVerifyFilter = includeAutoVerifyFilter
       ? '''
@@ -166,14 +197,20 @@ void _writeAndroidManifest(
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application android:label="test_app" android:name="\${applicationName}">
         ${deepLinkingInApplication ? deepLinkingMetaData : ''}
-        <activity android:name=".MainActivity" android:exported="true">
+$provider        <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
             ${deepLinkingInApplication ? '' : deepLinkingMetaData}
-            $autoVerifyFilter
+            ${useActivityAlias ? '' : autoVerifyFilter}
         </activity>
+        ${useActivityAlias ? '''<activity-alias
+            android:name=".DeepLinkAlias"
+            android:targetActivity=".MainActivity"
+            android:exported="true">
+            $autoVerifyFilter
+        </activity-alias>''' : ''}
     </application>
 </manifest>
 ''');
@@ -476,6 +513,22 @@ Map<String, dynamic> get deeplinkConfig => {
       );
     });
 
+    test('the wiring warning reaches getWarnings, not just checkWiring', () {
+      _writeValidConfig(tempDir);
+      _writeDartWiring(tempDir, includeHandler: false);
+      _writeAssociationFiles(tempDir);
+
+      // getWarnings read `associations` alone, so the one finding that means
+      // "no link will ever reach a handler" was the one the summary dropped:
+      // the report body printed `Dart Wiring: Needs attention` while the
+      // summary underneath said everything passed and the command exited 0,
+      // and without --verbose the text appeared nowhere at all.
+      expect(
+        command.getWarnings().any((w) => w.contains('registerHandler')),
+        isTrue,
+      );
+    });
+
     test('a commented-out provider does not count as registered', () {
       _writeValidConfig(tempDir);
       _writeDartWiring(tempDir, includeProvider: false);
@@ -567,6 +620,38 @@ Map<String, dynamic> get appConfig => {
     test('a correctly configured Android project has no issues', () {
       _writeValidConfig(tempDir);
       _writeAndroidManifest(tempDir);
+      expect(androidIssues(), isEmpty);
+    });
+
+    // Three shapes a real manifest takes that a correct project should not be
+    // failed for. Each one did fail before, and this file's own rule is that
+    // failing a correct project is worse than under-reporting.
+    test('accepts a meta-data written with an explicit close tag', () {
+      _writeValidConfig(tempDir);
+      _writeAndroidManifest(tempDir, explicitCloseTag: true);
+      expect(androidIssues(), isEmpty);
+    });
+
+    test(
+        'does not read a meta-data inside a <provider> as one on '
+        '<application>', () {
+      _writeValidConfig(tempDir);
+      _writeAndroidManifest(tempDir, providerWithMetaData: true);
+
+      // The activity carries the correct value. Stripping only <activity>
+      // blocks left the provider's own meta-data looking like a direct child,
+      // and the early return meant the activity was never even looked at.
+      expect(androidIssues(), isEmpty);
+    });
+
+    test('finds an autoVerify filter on an <activity-alias>', () {
+      _writeValidConfig(tempDir);
+      _writeAndroidManifest(tempDir, useActivityAlias: true);
+
+      // An alias carries intent filters like an activity does. It also breaks
+      // a naive `<activity\b...</activity>` pattern, because a word boundary
+      // sits between the `y` and the `-`, so the match ran past the alias to
+      // some later close tag.
       expect(androidIssues(), isEmpty);
     });
 

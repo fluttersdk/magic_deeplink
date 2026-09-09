@@ -462,17 +462,38 @@ class DoctorCommand extends ArtisanCommand {
     }
 
     // 1. Split the application body into "direct children" and each
-    //    <activity>'s own body, so a <meta-data> can be told apart by TREE
+    //    activity's own body, so a <meta-data> can be told apart by TREE
     //    POSITION rather than by a substring search that greps the same on
     //    either element.
-    final activityRegex = RegExp(
-      r'<activity\b[^>]*>(.*?)</activity>',
+    //
+    //    Every container that can sit under <application> is removed, not just
+    //    <activity>. A review found the narrow version failing a CORRECTLY
+    //    configured project: with the meta-data on the right activity and an
+    //    unrelated one inside a <provider>, that second one stayed in
+    //    `directChildren` and was reported as declared on <application>, and
+    //    the early return meant the activity was never even looked at. This
+    //    file's own rule is that failing a correct project is worse than
+    //    under-reporting.
+    //
+    //    `activity-alias` leads the alternation deliberately. `<activity\b`
+    //    matches `<activity-alias` too, because a word boundary sits between
+    //    the `y` and the `-`, so putting `activity` first made the pattern
+    //    hunt for a `</activity>` that belongs to some later element and
+    //    swallow everything between. An alias also carries intent filters, so
+    //    its body belongs with the activities rather than being discarded.
+    final childRegex = RegExp(
+      r'<(activity-alias|activity|service|provider|receiver)\b[^>]*?'
+      r'(?:/>|>(.*?)</\1>)',
       dotAll: true,
     );
-    final activityMatches = activityRegex.allMatches(applicationBody).toList();
-    final activityBodies = activityMatches.map((m) => m.group(1)!).toList();
+    final childMatches = childRegex.allMatches(applicationBody).toList();
+    final activityBodies = childMatches
+        .where(
+            (m) => m.group(1) == 'activity' || m.group(1) == 'activity-alias')
+        .map((m) => m.group(2) ?? '')
+        .toList();
     var directChildren = applicationBody;
-    for (final match in activityMatches) {
+    for (final match in childMatches) {
       directChildren = directChildren.replaceFirst(match.group(0)!, '');
     }
 
@@ -499,11 +520,17 @@ class DoctorCommand extends ArtisanCommand {
     ).firstMatch(manifest)?.group(1);
   }
 
-  /// Whether any self-closed `<meta-data>` element in [body] names [name],
-  /// and if so, the value of its `android:value` attribute.
+  /// Whether any `<meta-data>` element in [body] names [name], and if so, the
+  /// value of its `android:value` attribute.
+  ///
+  /// Both spellings, `<meta-data ... />` and `<meta-data ...></meta-data>`.
+  /// Requiring the self-closing form failed a correctly configured manifest
+  /// that used the explicit close tag, which Android accepts identically. The
+  /// attributes live in the opening tag either way, so the trailing `/` is
+  /// optional in the pattern rather than needing a second one.
   String? _metaDataValue(String body, String name) {
     final nameRegex = RegExp('android:name\\s*=\\s*"${RegExp.escape(name)}"');
-    for (final match in RegExp(r'<meta-data\b([^>]*?)/>').allMatches(body)) {
+    for (final match in RegExp(r'<meta-data\b([^>]*?)/?>').allMatches(body)) {
       final attrs = match.group(1)!;
       if (!nameRegex.hasMatch(attrs)) continue;
       return RegExp(r'android:value\s*=\s*"([^"]*)"')
@@ -894,17 +921,35 @@ class DoctorCommand extends ArtisanCommand {
     return missing;
   }
 
-  /// Everything configured correctly that still deserves a second look —
-  /// currently only a mixed-format association file. Never fails the
-  /// command; a doctor that always fails gets ignored.
+  /// Everything configured correctly that still deserves a second look. Never
+  /// fails the command; a doctor that always fails gets ignored.
+  ///
+  /// Collected from EVERY section rather than from `associations` alone, which
+  /// is what it read at first and is a shape that loses a finding silently
+  /// every time a section learns to warn. It already had: `checkWiring`'s "no
+  /// `registerHandler(` anywhere under lib/" never reached the summary, so a
+  /// project that could not route a single link printed
+  /// `Dart Wiring: ⚠ Needs attention` in the report body, `All checks passed!`
+  /// underneath it, and exited 0. Without `--verbose` the warning text appeared
+  /// nowhere at all.
   List<String> getWarnings() {
     if (!checkConfigExists()) return const [];
 
-    final associations =
-        checkPlatformSetup()['associations'] as Map<String, dynamic>?;
-    if (associations == null) return const [];
+    final warnings = <String>[];
 
-    return List<String>.from(associations['warnings'] as List? ?? const []);
+    for (final MapEntry<String, dynamic> entry
+        in checkPlatformSetup().entries) {
+      final section = entry.value;
+      if (section is! Map<String, dynamic>) continue;
+
+      for (final warning in section['warnings'] as List? ?? const []) {
+        // Prefixed the way getMissingRequirements prefixes its own, so a
+        // reader can tell which half of the install a line is about.
+        warnings.add('[${entry.key}] $warning');
+      }
+    }
+
+    return warnings;
   }
 
   /// Generate a human-readable diagnostic report.

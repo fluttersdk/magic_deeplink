@@ -27,6 +27,7 @@ Then run:
 | `dart format .` | Format all code |
 | `dart run <app>:artisan deeplink:install` | Generate `lib/config/deeplink.dart` in consumer project |
 | `dart run <app>:artisan deeplink:generate --output ./public` | Generate apple-app-site-association & assetlinks.json |
+| `dart run <app>:artisan deeplink:doctor` | Check the install; `--remote` also fetches both association files from the live domain |
 
 ## Architecture
 
@@ -45,7 +46,8 @@ lib/
         ├── deeplink_artisan_provider.dart  # ArtisanServiceProvider (no bin entrypoint)
         ├── commands/
         │   ├── install_command.dart        # extends ArtisanInstallCommand, driven by install.yaml
-        │   └── generate_command.dart       # extends ArtisanCommand
+        │   ├── generate_command.dart       # extends ArtisanCommand
+        │   └── doctor_command.dart         # reads the config + both platform trees; --remote adds the live host
         └── cli.dart                        # Barrel export (provider + commands)
 install.yaml                   # Plugin manifest: config publish, provider/factory injection
 assets/stubs/                  # Stub templates for code generation

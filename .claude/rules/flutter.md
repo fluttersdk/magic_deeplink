@@ -14,9 +14,9 @@ paths:
 - IoC binding: `app.singleton('key', () => Service())` in register, `app.make<T>('key')` in boot
 - Config access: always via `ConfigRepository` — `config.get('deeplink.driver')`, never hardcode
 - Optional dependencies: check `app.bound('key')` + dynamic cast + try-catch. Never import optional packages directly
-- Handler chain: `canHandle(Uri) → bool`, `handle(Uri) → Future<bool>`. First match wins, return bool (never throw)
+- Handler chain: `canHandle(Uri) → bool`, `handle(Uri, {required DeeplinkSource source, Map<String, dynamic>? payload}) → Future<bool>`. First match wins, return bool (never throw). `source` is REQUIRED rather than defaulted, so a handler that acts on more than the path cannot silently treat a crafted OS link like a server-authored push payload
 - Driver contract: `name`, `isSupported`, `onLink` (Stream), `initialize(Map config)`, `getInitialLink()`, `dispose()`
 - Streams: `StreamController<Uri>.broadcast()` for multi-listener events
-- Deferred UI work: `Future.delayed(Duration.zero, ...)` to wait for post-frame (router ready)
+- Waiting for the router: `await WidgetsFlutterBinding.ensureInitialized().endOfFrame`, captured ONCE and awaited, never `Future.delayed(Duration.zero, ...)`. A zero-duration timer is a guess about how long a boot takes and loses the link on any boot slower than it; `endOfFrame` is the event, and it schedules a frame when the scheduler is idle so an application nobody is drawing still gets the link
 - Barrel export: `lib/magic_deeplink.dart` groups by concern (Core, Handlers, Drivers, Providers, Exceptions)
 - `analysis_options.yaml` uses `package:flutter_lints/flutter.yaml` — zero warnings required

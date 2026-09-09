@@ -99,6 +99,22 @@ class DeeplinkServiceProvider extends ServiceProvider {
   /// is idle, so a link handed to an application nobody is drawing still gets
   /// delivered rather than waiting for a frame that never comes.
   ///
+  /// Known gap, raised in review and NOT closed here because settling it needs
+  /// a device rather than an argument. The end of a frame is not literally the
+  /// same event as "the router exists": magic builds it at
+  /// `foundation/magic.dart:112`, AFTER the `await boot()` on the line above,
+  /// so throughout every provider's boot `MagicRouter._router` is still null
+  /// and `MagicRoute.to` would throw. This future is captured during that boot
+  /// and a cold-start link queues behind it immediately, since `app_links`
+  /// replays the launch link on first listen. If a provider registered after
+  /// this one yields the event loop in its own boot, and the scheduler serves
+  /// the frame inside that window, delivery resumes against a null router. The
+  /// `try`/`catch` below turns that into a logged error rather than a silent
+  /// loss, which is why this is a gap rather than a regression, and the path
+  /// was measured working on a physical iPhone. If a cold-start link is ever
+  /// reported lost WITH a `StateError` in the log, this paragraph is the
+  /// place to start.
+  ///
   /// Nothing awaits this future, so it swallows nothing and lets nothing
   /// escape: an error here reaches no caller, and left alone it would surface
   /// as an unhandled async error and take a tapped link with it.

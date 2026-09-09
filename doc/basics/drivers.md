@@ -10,6 +10,7 @@
     - [dispose](#dispose)
 - [AppLinksDriver](#applinksdriver)
     - [Platform Support](#platform-support)
+    - [Web, in detail](#web)
 - [Custom Drivers](#custom-drivers)
     - [Implementing the Contract](#implementing-the-contract)
     - [Registering a Custom Driver](#registering-a-custom-driver)
@@ -131,11 +132,25 @@ driver.onLink.listen((uri) {
 | Android  | Yes: App Links (HTTPS intent filter) |
 | iOS      | Yes: Universal Links (apple-app-site-association) |
 | macOS    | Yes: Universal Links |
-| Web      | No |
+| Web      | No driver, but see below: deep links still work, by two other routes |
 | Windows  | No |
 | Linux    | No |
 
 On web, `AppLinksDriver` resolves to the web arm above, whose `isSupported` is unconditionally `false`. On Android, iOS and macOS it resolves to the `dart:io` arm, whose `isSupported` follows `Platform.isAndroid || Platform.isIOS || Platform.isMacOS`; that check answers `false` on Windows and Linux too, and the stub arm (also `isSupported == false`) covers any remaining target. The service provider will not attempt initialization or stream subscription when `isSupported` is `false`.
+
+<a name="web"></a>
+### Web, in detail
+
+"No driver" is not "no deep links", and reading the table alone has sent people away from a working feature. Web has two routes into a screen and this package owns neither driver, so both are easy to leave half configured.
+
+**A tapped push, with the tab open, does reach the handler chain.** The push bridge is wired OUTSIDE the `isSupported` gate in `DeeplinkServiceProvider.boot()`, so it exists on web exactly as it does on mobile: `OneSignalWebDriver` publishes the click, the notification manager republishes it, and `OneSignalDeeplinkHandler` routes it with `DeeplinkSource.push`. Put the link in the notification's `additionalData` under `url`, `deep_link`, `link` or `uri`, the same keys mobile reads. A launch URL set on the OneSignal side alone is NOT read by the bridge.
+
+**An address-bar link is GoRouter's job, not this package's,** which is why the driver is inert rather than wired to `app_links_web`: that package reads `location.href` once at boot and never reacts to later navigation, so routing the same URI twice would be the bug. But GoRouter only gets a clean path when two things outside this package are true, and neither fails loudly:
+
+1. `routing.url_strategy` is `'path'` in the app's routing config. Without it Flutter uses the hash strategy and `https://app.example.com/incidents/5` is not a route at all.
+2. The web host rewrites unknown paths to `index.html`. Without it the same URL is a plain 404 from nginx or whatever serves the build, and Flutter never boots.
+
+**A push clicked with no tab open is the second route, not the first.** No Dart code is running, so nothing reads `additionalData`; the service worker opens the notification's launch URL, which arrives as an ordinary page load and therefore needs both prerequisites above.
 
 <a name="custom-drivers"></a>
 ## Custom Drivers

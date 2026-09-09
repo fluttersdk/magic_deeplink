@@ -40,7 +40,7 @@ Or add it manually to `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  magic_deeplink: ^0.0.3
+  magic_deeplink: ^0.1.0
 ```
 
 Then fetch dependencies:
@@ -239,6 +239,23 @@ An operating system will not hand your app a link until you tell it your app own
    This one is **not** applied by `deeplink:install`. Artisan's `XmlEditor` (the shared engine every plugin's `native.android.meta_data` key runs through) inserts `<meta-data>` entries into `<application>`, and Flutter reads this specific key from `<activity>`; automating it through that key would silently write a `<meta-data>` entry Flutter never looks at, passing every check while doing nothing. Add it by hand.
 
 3. **Host the `assetlinks.json` file.** Generate it with `dart run <app>:artisan deeplink:generate --output ./public` and upload it to `https://<your-domain>/.well-known/assetlinks.json`. Android verifies it at install time, not at link-click time.
+
+<a name="verify"></a>
+## Verify the install before you reach for a device
+
+```bash
+dart run <app>:artisan deeplink:doctor
+```
+
+Every way of getting this install wrong is silent. A `<meta-data>` on the wrong element, a missing `<data>` scheme, an association file that names a different bundle, a provider that never reached `lib/config/app.dart`: none of them throws, none of them logs, and the only symptom is a link that opens the browser. The doctor reads the project's own files and says which prerequisite is actually in place, including the Dart wiring that makes every platform file matter.
+
+Add `--remote` to also fetch both association files from the live domain, which is the half a repo-only check cannot see:
+
+```bash
+dart run <app>:artisan deeplink:doctor --remote
+```
+
+What it can never prove is that a real device matches an incoming link to this app: `swcutil verify` needs root and Android verifies at install time. The last mile is always a real device, and on iOS it must be a **profile or release** build, since iOS refuses to launch a debug Flutter build from a link or from the home screen.
 
 <a name="next-steps"></a>
 ## Next Steps

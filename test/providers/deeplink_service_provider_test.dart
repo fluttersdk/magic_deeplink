@@ -452,9 +452,9 @@ void main() {
       expect(handler.sources, [DeeplinkSource.osLink]);
     });
 
-    test(
+    testWidgets(
         'routes a push click carrying deep_link when notifications is '
-        'registered after this provider', () async {
+        'registered after this provider', (WidgetTester tester) async {
       await MagicApp.init(configs: [
         {
           'deeplink': {'enabled': true}
@@ -475,7 +475,10 @@ void main() {
         'deep_link': 'https://uptizm.com/incidents/42',
         'title': 'Monitor down',
       });
-      await Future<void>.delayed(Duration.zero);
+
+      // A push click waits for the first frame for the same reason an OS link
+      // does: on a cold start it arrives before anything is drawn.
+      await tester.pump();
 
       expect(handler.handled, [Uri.parse('https://uptizm.com/incidents/42')]);
       expect(handler.sources, [DeeplinkSource.push]);

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/widgets.dart';
 import 'package:magic/magic.dart';
 
 import '../deeplink_manager.dart';
@@ -32,6 +33,29 @@ class OneSignalDeeplinkHandler {
   static const String _clickStream = 'onPushClicked';
 
   StreamSubscription<dynamic>? _subscription;
+
+  /// The frame a routed push waits for, captured once per [setup].
+  ///
+  /// A COLD start is the case this exists for. The OneSignal SDK replays the
+  /// tap that launched the app while it initialises, which is before the app
+  /// has drawn anything and therefore before magic's router can accept a
+  /// navigation: the link was handed over, went nowhere, and the app finished
+  /// booting onto its own initial route. Measured on a device: the same push
+  /// opened the right screen when the app was already running and landed on
+  /// the home screen when it was not.
+  ///
+  /// `endOfFrame` rather than a post-frame callback, for the reason the OS-link
+  /// path in `DeeplinkServiceProvider` takes it: it SCHEDULES a frame when the
+  /// scheduler is idle, so a link handed to an application nobody is drawing is
+  /// still delivered instead of waiting for a frame that never comes.
+  ///
+  /// Captured in [setup], before any click can arrive, because asking for it
+  /// again per event would wait for ANOTHER frame each time and taps would
+  /// arrive out of order.
+  Future<void>? _firstFrame;
+
+  /// Whether [dispose] has run since the last [setup].
+  bool _disposed = false;
 
   /// Extract URI from OneSignal notification data
   ///
@@ -111,8 +135,11 @@ class OneSignalDeeplinkHandler {
     // this handler was just told to stop following.
     _subscription?.cancel();
     _subscription = null;
+    _disposed = false;
 
     if (clicks == null) return;
+
+    _firstFrame = WidgetsFlutterBinding.ensureInitialized().endOfFrame;
 
     _subscription = clicks.listen(
       (event) => unawaited(_route(manager, event)),
@@ -125,8 +152,10 @@ class OneSignalDeeplinkHandler {
 
   /// Dispose the subscription
   void dispose() {
+    _disposed = true;
     _subscription?.cancel();
     _subscription = null;
+    _firstFrame = null;
   }
 
   /// The stream [notifications] publishes tapped pushes on, or `null` when it
@@ -186,6 +215,14 @@ class OneSignalDeeplinkHandler {
     // built yet answers with a StateError) would otherwise leave the zone as an
     // unhandled async error and take a tapped notification with it.
     try {
+      // See [_firstFrame]: on a cold start this event arrives mid-boot, and
+      // routing it before anything is drawn loses it.
+      await _firstFrame;
+
+      // A teardown that landed while the frame was pending. The subscription is
+      // cancelled by then, but this delivery was already in flight.
+      if (_disposed) return;
+
       await manager.handleUri(uri, source: DeeplinkSource.push, payload: data);
     } catch (error) {
       _report(

@@ -132,8 +132,9 @@ void main() {
       expect(log.entries.where((entry) => entry.level == 'error'), isNotEmpty);
     });
 
-    test('setup routes a click carrying deep_link to the deeplink manager',
-        () async {
+    testWidgets(
+        'setup routes a click carrying deep_link to the deeplink '
+        'manager', (WidgetTester tester) async {
       final notifications = FakeNotificationManager();
 
       handler.setup(deeplinks, notifications);
@@ -141,16 +142,16 @@ void main() {
         'deep_link': 'https://uptizm.com/incidents/42',
         'title': 'Monitor down',
       });
-      await Future<void>.delayed(Duration.zero);
+      await tester.pump();
 
       expect(deeplinks.handled, [Uri.parse('https://uptizm.com/incidents/42')]);
 
       await notifications.dispose();
     });
 
-    test(
-        'a push click arrives as DeeplinkSource.push carrying the whole '
-        'payload', () async {
+    testWidgets(
+        'a push click arrives as DeeplinkSource.push carrying the '
+        'whole payload', (WidgetTester tester) async {
       final notifications = FakeNotificationManager();
 
       handler.setup(deeplinks, notifications);
@@ -158,7 +159,7 @@ void main() {
         'deep_link': '/incidents/1',
         'team_id': 't-9',
       });
-      await Future<void>.delayed(Duration.zero);
+      await tester.pump();
 
       // The link alone is not enough. A consumer decides whether to act on
       // `team_id` by asking where the instruction came from, and it can only
@@ -168,6 +169,50 @@ void main() {
       expect(deeplinks.payloads, [
         {'deep_link': '/incidents/1', 'team_id': 't-9'},
       ]);
+
+      await notifications.dispose();
+    });
+
+    testWidgets(
+        'a click is held until the first frame, so a cold start does '
+        'not route into a router nobody has built',
+        (WidgetTester tester) async {
+      final notifications = FakeNotificationManager();
+
+      handler.setup(deeplinks, notifications);
+      notifications.publishClick({'deep_link': '/incidents/1'});
+
+      // Every microtask the click scheduled has run by now. Routing here is
+      // what a cold start does: the OneSignal SDK replays the tap that
+      // launched the app while it initialises, before anything is drawn, and
+      // magic's router cannot accept a navigation yet. Measured on a device,
+      // the link went nowhere and the app finished booting onto its own
+      // initial route.
+      await tester.idle();
+      expect(deeplinks.handled, isEmpty);
+
+      await tester.pump();
+      expect(deeplinks.handled, [Uri.parse('/incidents/1')]);
+
+      await notifications.dispose();
+    });
+
+    testWidgets(
+        'a click that lands while the frame is pending is dropped '
+        'after dispose', (WidgetTester tester) async {
+      final notifications = FakeNotificationManager();
+
+      handler.setup(deeplinks, notifications);
+      notifications.publishClick({'deep_link': '/incidents/1'});
+      await tester.idle();
+
+      // The subscription is cancelled by now, but this delivery was already in
+      // flight behind the frame; routing it would drive a consumer that has
+      // just been torn down.
+      handler.dispose();
+      await tester.pump();
+
+      expect(deeplinks.handled, isEmpty);
 
       await notifications.dispose();
     });

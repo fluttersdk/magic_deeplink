@@ -19,7 +19,7 @@
 <a name="introduction"></a>
 ## Introduction
 
-`DeeplinkManager` is the central coordinator of the magic_deeplink plugin. It owns a single platform driver, an ordered list of URI handlers, and a broadcast stream that emits every incoming deep link. The `DeeplinkServiceProvider` creates and wires the manager during app boot — consuming code rarely needs to interact with it directly.
+`DeeplinkManager` is the central coordinator of the magic_deeplink plugin. It owns a single platform driver, an ordered list of URI handlers, and a broadcast stream that emits every incoming deep link. The `DeeplinkServiceProvider` creates and wires the manager during app boot: consuming code rarely needs to interact with it directly.
 
 ```dart
 // Resolve the singleton anywhere
@@ -48,19 +48,18 @@ class DeeplinkManager {
 
 Every call to `DeeplinkManager()` returns the same `_instance`. There is no public constructor that creates a new object.
 
-**Testing reset:** Because the singleton persists across tests, each `setUp` must clear mutable state before asserting:
+**Testing reset:** Because the singleton persists across tests, each `setUp` must clear mutable state before asserting. `forgetHandlers()` and `forgetDriver()` alone leave two things behind: the cached initial link (so a second `getInitialLink()` answers the previous test's URI without ever reaching the driver) and the broadcast controller behind `onLink` (which nothing closes). The `@visibleForTesting reset()` method clears all four:
 
 ```dart
 setUp(() {
-  manager.forgetHandlers();
-  manager.forgetDriver();
+  manager.reset();
 });
 ```
 
 <a name="driver-orchestration"></a>
 ## Driver Orchestration
 
-The manager delegates all platform I/O to a single `DeeplinkDriver`. The driver is not set at construction time — it is injected by `DeeplinkServiceProvider.boot()` after the IoC container is ready.
+The manager delegates all platform I/O to a single `DeeplinkDriver`. The driver is not set at construction time: it is injected by `DeeplinkServiceProvider.boot()` after the IoC container is ready.
 
 <a name="setting-a-driver"></a>
 ### Setting a Driver
@@ -69,7 +68,7 @@ The manager delegates all platform I/O to a single `DeeplinkDriver`. The driver 
 void setDriver(DeeplinkDriver driver)
 ```
 
-Assigns the active driver. Replaces any previously set driver without disposing it — the provider is responsible for driver lifecycle.
+Assigns the active driver. Replaces any previously set driver without disposing it: the provider is responsible for driver lifecycle.
 
 ```dart
 manager.setDriver(AppLinksDriver());
@@ -110,12 +109,12 @@ abstract class DeeplinkDriver {
 }
 ```
 
-The provider calls `initialize()` once during boot, then subscribes to `onLink` and pipes each emitted URI into `manager.handleUri()`.
+The provider calls `initialize()` once during boot, then subscribes to `onLink` and pipes each emitted URI into `manager.handleUri(uri, source: DeeplinkSource.osLink)`.
 
 <a name="handler-chain"></a>
 ## Handler Chain
 
-The manager maintains an ordered `List<DeeplinkHandler>`. When a URI arrives, the list is iterated in insertion order and the first handler whose `canHandle()` returns `true` wins — subsequent handlers are skipped.
+The manager maintains an ordered `List<DeeplinkHandler>`. When a URI arrives, the list is iterated in insertion order and the first handler whose `canHandle()` returns `true` wins: subsequent handlers are skipped.
 
 <a name="registering-handlers"></a>
 ### Registering Handlers
@@ -154,11 +153,15 @@ Clears the entire handler list. Used in test teardown and provider re-boot scena
 ```dart
 abstract class DeeplinkHandler {
   bool canHandle(Uri uri);
-  Future<bool> handle(Uri uri);
+  Future<bool> handle(
+    Uri uri, {
+    required DeeplinkSource source,
+    Map<String, dynamic>? payload,
+  });
 }
 ```
 
-`canHandle` is synchronous — it inspects the URI and returns a boolean with no side effects. `handle` performs the actual work and returns `true` on success. Handlers must never throw; they return `false` on failure.
+`canHandle` is synchronous: it inspects the URI and returns a boolean with no side effects. `handle` performs the actual work and returns `true` on success. Handlers must never throw; they return `false` on failure. `source` says whether the URI arrived as an OS-opened link or a push notification's own payload, and `payload` carries that push's data (`null` on every other path); see `doc/basics/handlers.md` for what a handler may trust from each.
 
 <a name="uri-stream"></a>
 ## URI Stream
@@ -169,7 +172,7 @@ final StreamController<Uri> _linkController = StreamController<Uri>.broadcast();
 Stream<Uri> get onLink => _linkController.stream;
 ```
 
-A `broadcast` controller is used so multiple listeners (e.g., analytics, routing, tests) can subscribe independently without coordinating. The stream is never closed during normal app operation — it lives for the full process lifetime alongside the singleton.
+A `broadcast` controller is used so multiple listeners (e.g., analytics, routing, tests) can subscribe independently without coordinating. The stream is never closed during normal app operation: it lives for the full process lifetime alongside the singleton.
 
 Listening:
 
@@ -183,11 +186,15 @@ manager.onLink.listen((uri) {
 ## handleUri Flow
 
 ```dart
-Future<bool> handleUri(Uri uri) async {
+Future<bool> handleUri(
+  Uri uri, {
+  required DeeplinkSource source,
+  Map<String, dynamic>? payload,
+}) async {
   _linkController.add(uri);
   for (final handler in _handlers) {
     if (handler.canHandle(uri)) {
-      return await handler.handle(uri);
+      return await handler.handle(uri, source: source, payload: payload);
     }
   }
   return false;
@@ -196,8 +203,10 @@ Future<bool> handleUri(Uri uri) async {
 
 The method does two things unconditionally and sequentially:
 
-1. **Emit** — the URI is added to `_linkController` before any handler runs. Every stream subscriber receives the URI regardless of whether a handler exists.
-2. **Dispatch** — the handler list is iterated in order. The first handler for which `canHandle(uri)` is `true` is invoked. If it succeeds, `true` is returned and iteration stops. If no handler matches, `false` is returned.
+1. **Emit**: the URI is added to `_linkController` before any handler runs. Every stream subscriber receives the URI regardless of whether a handler exists.
+2. **Dispatch**: the handler list is iterated in order. The first handler for which `canHandle(uri)` is `true` is invoked with `source` and `payload` threaded through. If it succeeds, `true` is returned and iteration stops. If no handler matches, `false` is returned.
+
+`source` and `payload` are required at the call site because they cannot be recovered from `uri` alone: `OneSignalDeeplinkHandler` calls this with `source: DeeplinkSource.push` and the full notification payload, while the provider's own driver subscription calls it with `source: DeeplinkSource.osLink` and no payload.
 
 The stream emission is intentionally first so that observers see all URIs, not only those that are handled.
 
@@ -223,7 +232,7 @@ Future<Uri?> getInitialLink() async {
 | First call (`_initialLinkFetched == false`) | Delegates to `driver.getInitialLink()`, stores result, sets flag |
 | Subsequent calls (`_initialLinkFetched == true`) | Returns cached `_initialLink` immediately, no driver call |
 
-`_initialLink` may be `null` if the app was launched normally (not via a deep link). The `null` result is cached just like a non-null URI — the flag is set either way.
+`_initialLink` may be `null` if the app was launched normally (not via a deep link). The `null` result is cached just like a non-null URI: the flag is set either way.
 
 **Testing implication:** `forgetDriver()` does not reset `_initialLinkFetched`. If a test exercises initial link caching, it must interact with the singleton before the flag is set, or use a fresh manager instance via the private constructor in test subclasses.
 
@@ -236,19 +245,16 @@ App launch
     ▼
 DeeplinkServiceProvider.boot()
     │
-    ├─ manager.setDriver(AppLinksDriver())
+    ├─ return early if config.deeplink.enabled == false
+    │
+    ├─ manager.setDriver(driver)          (only when driver.isSupported)
     │
     ├─ driver.initialize(config)
     │
-    ├─ driver.onLink.listen(manager.handleUri)   ◄─── ongoing links
-    │
-    └─ manager.getInitialLink()
+    └─ driver.onLink.listen(uri => deliver after endOfFrame)
             │
             ▼
-        driver.getInitialLink()          (first call only)
-            │
-            ▼
-        manager.handleUri(uri)
+        manager.handleUri(uri, source: DeeplinkSource.osLink)
                 │
                 ├─ _linkController.add(uri)      ──► onLink stream subscribers
                 │
@@ -259,16 +265,18 @@ DeeplinkServiceProvider.boot()
                         └─ handler.canHandle(uri) == true
                                 │
                                 ▼
-                            handler.handle(uri)
+                            handler.handle(uri, source: source, payload: payload)
                                 │
                                 └─ return bool  ──► handleUri returns
 ```
 
+The cold-start link is delivered on this same stream: `app_links` serves it as the first emission of its link stream rather than through a separate read, so the provider no longer calls `manager.getInitialLink()` itself. That method remains on `DeeplinkManager` for a consumer that wants to ask directly, caching its result exactly as before.
+
 <a name="related"></a>
 ## Related
 
-- `lib/src/deeplink_manager.dart` — full source
-- `lib/src/drivers/deeplink_driver.dart` — driver contract
-- `lib/src/handlers/deeplink_handler.dart` — handler contract
-- `lib/src/providers/deeplink_service_provider.dart` — wires manager during app boot
-- `lib/src/exceptions/deeplink_exception.dart` — `DeeplinkException` with `NO_DRIVER` code
+- `lib/src/deeplink_manager.dart`: full source
+- `lib/src/drivers/deeplink_driver.dart`: driver contract
+- `lib/src/handlers/deeplink_handler.dart`: handler contract
+- `lib/src/providers/deeplink_service_provider.dart`: wires manager during app boot
+- `lib/src/exceptions/deeplink_exception.dart`: `DeeplinkException` with `NO_DRIVER` code

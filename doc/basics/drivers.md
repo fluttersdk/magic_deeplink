@@ -10,6 +10,7 @@
     - [dispose](#dispose)
 - [AppLinksDriver](#applinksdriver)
     - [Platform Support](#platform-support)
+    - [Web, in detail](#web)
 - [Custom Drivers](#custom-drivers)
     - [Implementing the Contract](#implementing-the-contract)
     - [Registering a Custom Driver](#registering-a-custom-driver)
@@ -18,7 +19,7 @@
 <a name="introduction"></a>
 ## Introduction
 
-A driver is the platform abstraction layer that delivers raw URI events to the `DeeplinkManager`. Drivers translate platform-specific deep link mechanisms — Universal Links on iOS and macOS, App Links on Android — into a uniform `Stream<Uri>` that the rest of the plugin consumes.
+A driver is the platform abstraction layer that delivers raw URI events to the `DeeplinkManager`. Drivers translate platform-specific deep link mechanisms (Universal Links on iOS and macOS, App Links on Android) into a uniform `Stream<Uri>` that the rest of the plugin consumes.
 
 The plugin ships with `AppLinksDriver`, which covers all supported native platforms via the [`app_links`](https://pub.dev/packages/app_links) package. If you need to source URIs from a custom mechanism (push notifications, in-app QR scanning, test harnesses), you can implement the `DeeplinkDriver` contract and register it in place of the default driver.
 
@@ -54,7 +55,9 @@ A stable identifier for the driver. Used for logging and diagnostics. Return a l
 bool get isSupported;
 ```
 
-Returns `true` when the driver can operate on the current platform. The `DeeplinkServiceProvider` skips driver initialization and stream setup when this returns `false`, so your check must be synchronous. Use `Platform.isAndroid`, `Platform.isIOS`, etc., guarded by a `try/catch` for environments where `dart:io` is unavailable, and check `kIsWeb` before any `Platform` access.
+Returns `true` when the driver can operate on the current platform. The `DeeplinkServiceProvider` skips driver initialization and stream setup entirely when this returns `false`, so your check must be synchronous. `AppLinksDriver` answers this from `Platform.isAndroid || Platform.isIOS || Platform.isMacOS`, guarded by a `try/catch` in case `dart:io` is unavailable at runtime.
+
+A custom driver that needs to run on web no longer follows the single-class-with-a-`kIsWeb`-branch shape `AppLinksDriver` used to: it is now a conditional-export barrel choosing between a `dart:io` arm and a `dart:js_interop` (web) arm at compile time, so `dart:io` is imported only where it is actually used. See [AppLinksDriver](#applinksdriver) for the shape.
 
 <a name="onlink"></a>
 ### onLink
@@ -72,7 +75,7 @@ A broadcast stream that emits every URI received while the application is runnin
 Future<void> initialize(Map<String, dynamic> config);
 ```
 
-Called once by the service provider before any link is consumed. Use this to create platform clients, open channels, or apply configuration values sourced from the `deeplink` config map. Keep this method idempotent — the provider does not guard against duplicate calls.
+Called once by the service provider before any link is consumed. Use this to create platform clients, open channels, or apply configuration values sourced from the `deeplink` config map. Keep this method idempotent: the provider does not guard against duplicate calls.
 
 <a name="getinitiallink"></a>
 ### getInitialLink
@@ -81,7 +84,7 @@ Called once by the service provider before any link is consumed. Use this to cre
 Future<Uri?> getInitialLink();
 ```
 
-Returns the URI that cold-started the application, or `null` if the app was launched normally. This is called once after `initialize()` completes. Swallow exceptions internally and return `null` on failure — callers do not expect this method to throw.
+Returns the URI that cold-started the application, or `null` if the app was launched normally. This is called once after `initialize()` completes. Swallow exceptions internally and return `null` on failure: callers do not expect this method to throw.
 
 <a name="dispose"></a>
 ### dispose
@@ -95,7 +98,17 @@ Releases any resources held by the driver (stream subscriptions, platform channe
 <a name="applinksdriver"></a>
 ## AppLinksDriver
 
-`AppLinksDriver` is the default driver. It delegates to the `app_links` package, which handles Universal Links (iOS / macOS) and App Links (Android) without any native Dart code in this plugin.
+`AppLinksDriver` is the default driver, and the exported name is a conditional-export barrel over three arms selected at compile time:
+
+```dart
+export 'app_links_driver_stub.dart'
+    if (dart.library.js_interop) 'app_links_driver_web.dart'
+    if (dart.library.io) 'app_links_driver_io.dart';
+```
+
+The `dart:io` arm wraps the `app_links` package and is the only one that talks to a real platform channel: it answers `isSupported` from `Platform.isAndroid || Platform.isIOS || Platform.isMacOS`, and delegates `getInitialLink()` and `onLink` to `app_links` directly.
+
+The web arm is a deliberate no-op, not a partial implementation waiting to be filled in: `isSupported` is `false`, `getInitialLink()` returns `null`, `onLink` is `Stream<Uri>.empty()`, and `initialize`/`dispose` do nothing. It is not wired to the `app_links_web` package, because that package reads the boot-time `location.href` once and never reacts to later navigation, while GoRouter already owns the browser's address bar under this app's path URL strategy; routing the same navigation through both would duplicate it, not add coverage.
 
 ```dart
 import 'package:magic_deeplink/magic_deeplink.dart';
@@ -116,14 +129,28 @@ driver.onLink.listen((uri) {
 
 | Platform | Supported |
 |----------|-----------|
-| Android  | Yes — App Links (HTTPS intent filter) |
-| iOS      | Yes — Universal Links (apple-app-site-association) |
-| macOS    | Yes — Universal Links |
-| Web      | No |
+| Android  | Yes: App Links (HTTPS intent filter) |
+| iOS      | Yes: Universal Links (apple-app-site-association) |
+| macOS    | Yes: Universal Links |
+| Web      | No driver, but see below: deep links still work, by two other routes |
 | Windows  | No |
 | Linux    | No |
 
-`AppLinksDriver.isSupported` returns `false` for web (`kIsWeb`) and for any platform not in the set `{Android, iOS, macOS}`. The service provider will not attempt initialization or stream subscription when `isSupported` is `false`.
+On web, `AppLinksDriver` resolves to the web arm above, whose `isSupported` is unconditionally `false`. On Android, iOS and macOS it resolves to the `dart:io` arm, whose `isSupported` follows `Platform.isAndroid || Platform.isIOS || Platform.isMacOS`; that check answers `false` on Windows and Linux too, and the stub arm (also `isSupported == false`) covers any remaining target. The service provider will not attempt initialization or stream subscription when `isSupported` is `false`.
+
+<a name="web"></a>
+### Web, in detail
+
+"No driver" is not "no deep links", and reading the table alone has sent people away from a working feature. Web has two routes into a screen and this package owns neither driver, so both are easy to leave half configured.
+
+**A tapped push, with the tab open, does reach the handler chain.** The push bridge is wired OUTSIDE the `isSupported` gate in `DeeplinkServiceProvider.boot()`, so it exists on web exactly as it does on mobile: `OneSignalWebDriver` publishes the click, the notification manager republishes it, and `OneSignalDeeplinkHandler` routes it with `DeeplinkSource.push`. Put the link in the notification's `additionalData` under `url`, `deep_link`, `link` or `uri`, the same keys mobile reads. A launch URL set on the OneSignal side alone is NOT read by the bridge.
+
+**An address-bar link is GoRouter's job, not this package's,** which is why the driver is inert rather than wired to `app_links_web`: that package reads `location.href` once at boot and never reacts to later navigation, so routing the same URI twice would be the bug. But GoRouter only gets a clean path when two things outside this package are true, and neither fails loudly:
+
+1. `routing.url_strategy` is `'path'` in the app's routing config. Without it Flutter uses the hash strategy and `https://app.example.com/incidents/5` is not a route at all.
+2. The web host rewrites unknown paths to `index.html`. Without it the same URL is a plain 404 from nginx or whatever serves the build, and Flutter never boots.
+
+**A push clicked with no tab open is the second route, not the first.** No Dart code is running, so nothing reads `additionalData`; the service worker opens the notification's launch URL, which arrives as an ordinary page load and therefore needs both prerequisites above.
 
 <a name="custom-drivers"></a>
 ## Custom Drivers
@@ -215,6 +242,6 @@ DeeplinkManager().setDriver(PushNotificationDriver());
 <a name="related"></a>
 ## Related
 
-- [Handlers](https://magic.fluttersdk.com/packages/deeplink/basics/handlers) — Chain-of-responsibility URI handling after the driver emits a link
-- [Configuration](https://magic.fluttersdk.com/packages/deeplink/getting-started/configuration) — `config/deeplink.dart` driver selection and options
-- [Service Provider](https://magic.fluttersdk.com/packages/deeplink/architecture/service-provider) — Boot lifecycle, driver initialization, and stream wiring
+- [Handlers](https://magic.fluttersdk.com/packages/deeplink/basics/handlers): Chain-of-responsibility URI handling after the driver emits a link
+- [Configuration](https://magic.fluttersdk.com/packages/deeplink/getting-started/configuration): `config/deeplink.dart` driver selection and options
+- [Service Provider](https://magic.fluttersdk.com/packages/deeplink/architecture/service-provider): Boot lifecycle, driver initialization, and stream wiring

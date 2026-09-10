@@ -4,6 +4,7 @@
 - [Commands](#commands)
     - [install](#install)
     - [generate](#generate)
+    - [doctor](#doctor)
 - [Config Merge Strategy](#config-merge-strategy)
 
 <a name="introduction"></a>
@@ -14,7 +15,7 @@ Magic Deeplink ships a CLI that scaffolds deep link configuration into your proj
 All commands are run via Dart's `run` mechanism:
 
 ```bash
-dart run magic_deeplink:<command> [options]
+dart run <app>:artisan deeplink:<command> [options]
 ```
 
 <a name="commands"></a>
@@ -26,8 +27,8 @@ dart run magic_deeplink:<command> [options]
 Scaffolds the deep link configuration file into the host project and wires it into the Magic app bootstrap automatically.
 
 ```bash
-dart run magic_deeplink:install
-dart run magic_deeplink:install --force
+dart run <app>:artisan deeplink:install
+dart run <app>:artisan deeplink:install --force
 ```
 
 #### What it does
@@ -63,7 +64,7 @@ All injections are idempotent — running the command twice does not duplicate e
 Generates the server-side deep link verification files: `apple-app-site-association` for iOS Universal Links and `assetlinks.json` for Android App Links.
 
 ```bash
-dart run magic_deeplink:generate \
+dart run <app>:artisan deeplink:generate \
   --team-id ABCDE12345 \
   --bundle-id com.example.app \
   --package-name com.example.app \
@@ -101,11 +102,12 @@ If the required flags for a platform are absent the command skips that file with
 ```json
 {
   "applinks": {
-    "apps": [],
     "details": [
       {
-        "appID": "<team-id>.<bundle-id>",
-        "paths": ["/*"]
+        "appIDs": ["<team-id>.<bundle-id>"],
+        "components": [
+          { "/": "/*", "comment": "Matches any URL whose path matches /*" }
+        ]
       }
     ]
   }
@@ -126,6 +128,52 @@ If the required flags for a platform are absent the command skips that file with
   }
 ]
 ```
+
+<a name="doctor"></a>
+### doctor
+
+Checks whether a deep link install actually works, before a device is ever involved.
+
+Manifest-driven install can publish the config file and inject a provider, but it cannot place an `<intent-filter>` inside a specific `<activity>` or tell you a `<meta-data>` landed on the wrong element. Every way of getting that hand-written half of the setup wrong is silent: a deep link simply opens the browser, with no exception and no log line anywhere.
+
+```bash
+dart run <app>:artisan deeplink:doctor
+dart run <app>:artisan deeplink:doctor --verbose
+dart run <app>:artisan deeplink:doctor --remote
+```
+
+#### What it checks
+
+Local checks, always run:
+
+1. `lib/config/deeplink.dart` exists and parses (reusing the same parser `generate` uses), and none of `domain`, `team_id`, `bundle_id`, `package_name`, `sha256_fingerprints` are still a scaffold placeholder (`example.com`, `YOUR_TEAM_ID`, `com.example.app`, `YOUR_SHA256_FINGERPRINT`).
+2. iOS: `Runner.entitlements` carries `com.apple.developer.associated-domains`, and its `applinks:` host equals `deeplink.domain`.
+3. iOS: `FlutterDeepLinkingEnabled` is `false` in `Info.plist`. Flutter has handled deep links itself by default since 3.27, and when it does, this plugin's handler chain never sees the link.
+4. Android: an `<intent-filter android:autoVerify="true">` inside the activity carries `VIEW`, `DEFAULT`, `BROWSABLE`, `<data>` elements for both `http` and `https`, and a host equal to `deeplink.domain`.
+5. Android: `flutter_deeplinking_enabled` is `false` and sits inside `<activity>`, not `<application>`. This is parsed off the manifest's element tree rather than searched for as text — a `<meta-data>` in the wrong element greps identically to one in the right one and is inert.
+6. The generated association files exist under `web/.well-known/` or `public/.well-known/`, and their contents agree with the config: the AASA's `appIDs` entry equals `<team_id>.<bundle_id>`, and `assetlinks.json`'s `package_name` and fingerprints match. A legacy `appID`+`paths` AASA entry mixed with a modern `appIDs`+`components` one in the same file is a warning, not a failure (Apple's TN3155 says mixing formats "may result in unexpected behavior").
+
+Remote check, only with `--remote`:
+
+7. `GET https://<domain>/.well-known/apple-app-site-association` and `.../assetlinks.json` — both must answer 200 with no redirect and a body that parses as JSON. A non-`application/json` content-type on the AASA is a warning.
+
+#### What it cannot prove
+
+No local or remote check can prove a device actually matches a link: `swcutil verify` needs root and Android verifies at install time. The report says so explicitly rather than letting a green run imply it. Verify the last mile on a real device.
+
+#### Options
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--verbose` | bool | `false` | Show per-issue detail under each section. |
+| `--remote` | bool | `false` | Also fetch both association files from the live domain. Never runs by default — a doctor that hangs on DNS is a doctor nobody runs. |
+
+#### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Every check passed (or only warnings were raised). |
+| `1` | At least one check failed. |
 
 <a name="config-merge-strategy"></a>
 ## Config Merge Strategy

@@ -1,5 +1,6 @@
 import 'package:fluttersdk_artisan/artisan.dart';
 
+import 'commands/doctor_command.dart' as deeplink_doctor;
 import 'commands/generate_command.dart';
 import 'commands/install_command.dart';
 
@@ -12,5 +13,6 @@ class MagicDeeplinkArtisanProvider extends ArtisanServiceProvider {
   List<ArtisanCommand> commands() => <ArtisanCommand>[
         InstallCommand(),
         GenerateCommand(),
+        deeplink_doctor.DoctorCommand(),
       ];
 }

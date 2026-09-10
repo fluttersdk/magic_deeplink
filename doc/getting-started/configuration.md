@@ -15,7 +15,7 @@
 The `magic_deeplink` plugin is configured via a single Dart file at `lib/config/deeplink.dart` in your consumer project. This file is generated automatically when you run the install command, and contains all values required for both runtime deep link handling and server-side asset file generation.
 
 ```bash
-dart run magic_deeplink:install
+dart run <app>:artisan deeplink:install
 ```
 
 The install command scaffolds `lib/config/deeplink.dart` with placeholder values. Replace the placeholders with your real credentials before running your app or generating server-side files.
@@ -79,10 +79,13 @@ The `'driver'` key determines which platform abstraction is used to receive inco
 'driver': 'app_links',
 ```
 
-`DeeplinkServiceProvider.boot()` reads this value and instantiates the matching driver. If the value does not match a known driver, no driver is registered and deep links will not be handled.
+`DeeplinkServiceProvider.boot()` reads this value and instantiates the matching driver. If the value does not match a known driver, no driver is registered and deep links will not be handled. The provider goes on to check `driver.isSupported` before wiring anything further: on web, `AppLinksDriver.isSupported` is `false` (the browser has no Universal Link / App Link mechanism for it to wrap), so no driver is set on the manager and no link subscription is created there, even though `'driver': 'app_links'` is still the correct config value on every platform.
 
 > [!NOTE]
 > `'app_links'` is the only supported driver in the current release. Additional drivers can be contributed by implementing the `DeeplinkDriver` abstract class.
+
+> [!NOTE]
+> The `'enabled'` key gates all of this. `DeeplinkServiceProvider.boot()` returns immediately when `Config.get<bool>('deeplink.enabled') == false`; an absent key still means enabled. Setting `false` skips the driver, the link subscription, and the OneSignal push bridge entirely, regardless of the value of `'driver'`.
 
 <a name="ios-configuration"></a>
 ## iOS Configuration
@@ -101,16 +104,20 @@ iOS Universal Links require an `apple-app-site-association` (AASA) file hosted a
 | `team_id` | `String` | Your 10-character Apple Developer Team ID, found in the Apple Developer portal under Membership. |
 | `bundle_id` | `String` | The bundle identifier of your iOS app (e.g. `com.example.app`). Must match the value in `Runner.xcodeproj`. |
 
-The `appID` field inside `apple-app-site-association` is constructed as `TEAM_ID.BUNDLE_ID`:
+The AASA the generator writes uses Apple's modern `appIDs` + `components` shape (TN3155), with each app identifier constructed as `TEAM_ID.BUNDLE_ID`. There is no `apps` key and no legacy `appID` + `paths` entry: Apple's own guidance warns that mixing the two schemas may produce unexpected behaviour for universal links.
 
 ```json
 {
   "applinks": {
-    "apps": [],
     "details": [
       {
-        "appID": "ABCDE12345.com.example.app",
-        "paths": ["/*"]
+        "appIDs": ["ABCDE12345.com.example.app"],
+        "components": [
+          {
+            "/": "/*",
+            "comment": "Matches any URL whose path matches /*"
+          }
+        ]
       }
     ]
   }
@@ -118,7 +125,7 @@ The `appID` field inside `apple-app-site-association` is constructed as `TEAM_ID
 ```
 
 > [!NOTE]
-> The AASA file must be served over HTTPS at `https://<domain>/.well-known/apple-app-site-association` with `Content-Type: application/json` and no redirect. Apple's CDN caches this file aggressively — allow up to 24 hours for updates to propagate.
+> The AASA file must be served over HTTPS at `https://<domain>/.well-known/apple-app-site-association` with `Content-Type: application/json` and no redirect. Apple's CDN caches this file aggressively, so allow up to 24 hours for updates to propagate.
 
 <a name="android-configuration"></a>
 ## Android Configuration
@@ -186,7 +193,7 @@ The default `'/*'` matches all paths under your domain. You can restrict this to
 | `'/reset-password'` | Exact path `/reset-password` only |
 
 > [!NOTE]
-> Android App Links use a different matching mechanism in `assetlinks.json` — the `assetlinks.json` grants your app permission for the entire domain. Path-level filtering on Android is handled by your intent filters in `AndroidManifest.xml`, not by the `paths` array here. The `paths` array in this config primarily drives the iOS AASA file and the CLI generate output.
+> Android App Links use a different matching mechanism in `assetlinks.json`: the `assetlinks.json` grants your app permission for the entire domain. Path-level filtering on Android is handled by your intent filters in `AndroidManifest.xml`, not by the `paths` array here. The `paths` array in this config primarily drives the iOS AASA file and the CLI generate output.
 
 <a name="accessing-configuration-values"></a>
 ## Accessing Configuration Values
@@ -222,7 +229,7 @@ await driver.initialize(config.get('deeplink') ?? {});
 The `generate` command reads `lib/config/deeplink.dart` automatically and uses your config values to produce the server-side asset files. CLI flags override config file values when both are present.
 
 ```bash
-dart run magic_deeplink:generate --output ./public
+dart run <app>:artisan deeplink:generate --output ./public
 ```
 
 This creates two files in the specified output directory:
@@ -235,7 +242,7 @@ This creates two files in the specified output directory:
 You can override individual values without editing the config file using CLI flags:
 
 ```bash
-dart run magic_deeplink:generate \
+dart run <app>:artisan deeplink:generate \
   --output ./public \
   --team-id ABCDE12345 \
   --bundle-id com.example.app \
@@ -252,7 +259,8 @@ dart run magic_deeplink:generate \
 | `--package-name` | `deeplink.android.package_name` | Android package name |
 | `--sha256-fingerprints` | `deeplink.android.sha256_fingerprints` | SHA-256 fingerprint(s); repeatable |
 | `--paths` | `deeplink.paths` | URL paths to handle; repeatable |
-| `--output` | — | Output directory (default: `public`) |
+| `--output` | N/A | Output directory (default: `public`) |
 
 > [!NOTE]
 > When `lib/config/deeplink.dart` is present, the generate command reads it first and uses those values as defaults. CLI flags take precedence over config file values, allowing you to override specific fields for different environments (e.g. a CI pipeline using separate signing certificates).
+> The parser also tolerates a Dart generic type annotation before the list literal (`<String>[...]`), which is how a hand-typed config writes `sha256_fingerprints` and `paths`.

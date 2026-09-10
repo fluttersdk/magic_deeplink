@@ -12,6 +12,10 @@ void main() {
     // Contracts
     expect(DeeplinkHandler, isNotNull);
     expect(DeeplinkDriver, isNotNull);
+    expect(
+      DeeplinkSource.values,
+      [DeeplinkSource.osLink, DeeplinkSource.push, DeeplinkSource.manual],
+    );
 
     // Implementations
     expect(RouteDeeplinkHandler, isNotNull);

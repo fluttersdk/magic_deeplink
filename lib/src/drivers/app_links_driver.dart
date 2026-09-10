@@ -1,48 +1,13 @@
-import 'dart:async';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
-import 'package:app_links/app_links.dart';
-import 'deeplink_driver.dart';
-
-/// Driver implementation using the `app_links` package.
-class AppLinksDriver extends DeeplinkDriver {
-  /// The app_links instance.
-  // ignore: unused_field
-  late final AppLinks _appLinks;
-
-  @override
-  String get name => 'app_links';
-
-  @override
-  bool get isSupported {
-    if (kIsWeb) return false;
-    try {
-      return Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  @override
-  Future<void> initialize(Map<String, dynamic> config) async {
-    _appLinks = AppLinks();
-  }
-
-  @override
-  Future<Uri?> getInitialLink() async {
-    try {
-      return await _appLinks.getInitialLink();
-    } catch (_) {
-      return null;
-    }
-  }
-
-  @override
-  Stream<Uri> get onLink => _appLinks.uriLinkStream;
-
-  @override
-  void dispose() {
-    // AppLinks does not require explicit disposal of the instance itself,
-    // but we can clean up any local resources if needed.
-  }
-}
+// Conditional export to select the right platform arm for `AppLinksDriver`.
+//
+// The stub is the default: it resolves only when neither guard below
+// matches, which no real Flutter build target does. The web guard picks the
+// `dart:js_interop` library rather than the legacy `dart:html` one, because
+// the legacy library is absent under a wasm web compile; guarding on it
+// there would fall through to the io guard and hand a browser the native
+// driver instead. The io guard picks the native (Android/iOS/macOS/...) arm,
+// the only one of the three allowed to import the `dart.library.io` platform
+// library.
+export 'app_links_driver_stub.dart'
+    if (dart.library.js_interop) 'app_links_driver_web.dart'
+    if (dart.library.io) 'app_links_driver_io.dart';

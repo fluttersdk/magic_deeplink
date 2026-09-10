@@ -4,6 +4,7 @@
 - [The DeeplinkHandler Contract](#the-deeplinkhandler-contract)
     - [canHandle](#canhandle)
     - [handle](#handle)
+    - [DeeplinkSource](#deeplinksource)
 - [Built-in Handlers](#built-in-handlers)
     - [RouteDeeplinkHandler](#routedeeplinkhandler)
     - [OneSignalDeeplinkHandler](#onesignaldeeplinkhandler)
@@ -16,7 +17,7 @@
 
 Handlers are the core processing unit of the deep link pipeline. When a deep link arrives, the `DeeplinkManager` walks its registered handler list and delegates the URI to the first handler that claims it. This chain-of-responsibility pattern keeps each handler focused on a single concern and makes the pipeline trivially extensible.
 
-Every handler implements the `DeeplinkHandler` contract. The two built-in handlers — `RouteDeeplinkHandler` and `OneSignalDeeplinkHandler` — cover the most common integration scenarios out of the box.
+Every handler implements the `DeeplinkHandler` contract. The two built-in handlers, `RouteDeeplinkHandler` and `OneSignalDeeplinkHandler`, cover the most common integration scenarios out of the box.
 
 <a name="the-deeplinkhandler-contract"></a>
 ## The DeeplinkHandler Contract
@@ -26,7 +27,11 @@ All handlers extend the abstract `DeeplinkHandler` class:
 ```dart
 abstract class DeeplinkHandler {
   bool canHandle(Uri uri);
-  Future<bool> handle(Uri uri);
+  Future<bool> handle(
+    Uri uri, {
+    required DeeplinkSource source,
+    Map<String, dynamic>? payload,
+  });
 }
 ```
 
@@ -37,16 +42,39 @@ abstract class DeeplinkHandler {
 bool canHandle(Uri uri);
 ```
 
-A synchronous predicate. Return `true` if this handler wants to process the URI; `false` to pass it to the next handler in the chain. Keep this method cheap — it runs on every incoming link before any handler is invoked.
+A synchronous predicate. Return `true` if this handler wants to process the URI; `false` to pass it to the next handler in the chain. Keep this method cheap: it runs on every incoming link before any handler is invoked.
 
 <a name="handle"></a>
 ### handle
 
 ```dart
-Future<bool> handle(Uri uri);
+Future<bool> handle(
+  Uri uri, {
+  required DeeplinkSource source,
+  Map<String, dynamic>? payload,
+});
 ```
 
-The async processing method, called only when `canHandle` returned `true`. Return `true` if the URI was successfully handled, `false` if processing failed but should not be retried by another handler. **Never throw** from this method — exceptions break the pipeline. Catch internally and return `false` on failure.
+The async processing method, called only when `canHandle` returned `true`. Return `true` if the URI was successfully handled, `false` if processing failed but should not be retried by another handler. **Never throw** from this method: exceptions break the pipeline. Catch internally and return `false` on failure.
+
+`source` and `payload` travel with the URI all the way from `DeeplinkManager.handleUri()`; see [DeeplinkSource](#deeplinksource) below for what they carry and why a handler should check them before trusting anything beyond the path.
+
+<a name="deeplinksource"></a>
+### DeeplinkSource
+
+```dart
+enum DeeplinkSource { osLink, push, manual }
+```
+
+Where the instruction to open `uri` came from, and the two paths are not equally trusted:
+
+| Value | Meaning | `payload` |
+|-------|---------|-----------|
+| `osLink` | The operating system opened the app on a Universal Link or App Link. Attacker-craftable: anyone who can get the device to open a URI can produce one of these. | Always `null`. |
+| `push` | The user tapped a push notification, and the payload is the server's own. | The full push payload the notification arrived with. |
+| `manual` | The application asked for the link itself, in code or in a test. | Whatever the caller passed, or `null`. |
+
+`source` is a required, non-defaulted parameter precisely so a handler cannot forget to ask: a handler that reads `payload` to act on more than the path it was given (switching the user's active team off a `team_id` key, say) may only do that when `source == DeeplinkSource.push`, because that is the one case where the payload was authored by the server rather than crafted into a URI. `RouteDeeplinkHandler` ignores both parameters entirely: navigating to a path the consumer listed is safe regardless of who asked for it.
 
 <a name="built-in-handlers"></a>
 ## Built-in Handlers
@@ -96,7 +124,7 @@ Query parameters are forwarded automatically, so `https://example.com/products/4
 <a name="onesignaldeeplinkhandler"></a>
 ### OneSignalDeeplinkHandler
 
-Bridges OneSignal push-notification click events into the deep link pipeline. It does **not** implement `DeeplinkHandler` directly — instead it acts as a listener adapter that extracts a URI from the notification payload and feeds it to the manager.
+Bridges OneSignal push-notification click events into the deep link pipeline. It does **not** implement `DeeplinkHandler` directly: instead it acts as a listener adapter that extracts a URI from the notification payload and feeds it to the manager.
 
 **URI extraction:**
 
@@ -151,7 +179,11 @@ class ProductDeeplinkHandler extends DeeplinkHandler {
   }
 
   @override
-  Future<bool> handle(Uri uri) async {
+  Future<bool> handle(
+    Uri uri, {
+    required DeeplinkSource source,
+    Map<String, dynamic>? payload,
+  }) async {
     final id = int.parse(uri.pathSegments[1]);
 
     try {
@@ -174,13 +206,14 @@ class ProductDeeplinkHandler extends DeeplinkHandler {
 Key rules when implementing a custom handler:
 
 - `canHandle` must be **synchronous** and **side-effect free**.
-- `handle` must **never throw** — wrap async operations in try-catch.
+- `handle` must **never throw**: wrap async operations in try-catch.
 - Return `false` (not throw) when the URI cannot be handled after `canHandle` returned `true`.
+- Trust `payload` only when `source == DeeplinkSource.push`; an `osLink` carries no payload and its URI is attacker-craftable.
 
 <a name="registering-handlers"></a>
 ## Registering Handlers
 
-Register handlers on the `DeeplinkManager` singleton via `registerHandler()`. The manager deduplicates registrations — adding the same instance twice has no effect.
+Register handlers on the `DeeplinkManager` singleton via `registerHandler()`. The manager deduplicates registrations: adding the same instance twice has no effect.
 
 ```dart
 final manager = DeeplinkManager();
@@ -198,7 +231,7 @@ The recommended place to register handlers is inside `DeeplinkServiceProvider.bo
 class DeeplinkServiceProvider extends ServiceProvider {
   @override
   Future<void> boot() async {
-    final manager = app.make<DeeplinkManager>('deeplink');
+    final manager = app.make<DeeplinkManager>('deeplinks');
 
     manager.registerHandler(
       RouteDeeplinkHandler(
@@ -217,10 +250,14 @@ class DeeplinkServiceProvider extends ServiceProvider {
 Handlers are evaluated in **registration order**. The manager iterates the list and stops at the first handler whose `canHandle` returns `true`:
 
 ```dart
-Future<bool> handleUri(Uri uri) async {
+Future<bool> handleUri(
+  Uri uri, {
+  required DeeplinkSource source,
+  Map<String, dynamic>? payload,
+}) async {
   for (final handler in _handlers) {
     if (handler.canHandle(uri)) {
-      return await handler.handle(uri);
+      return await handler.handle(uri, source: source, payload: payload);
     }
   }
   return false; // No handler claimed the URI
@@ -237,7 +274,7 @@ Practical implications:
 // Specific handler first
 manager.registerHandler(ProductDeeplinkHandler());
 
-// Generic route handler second — won't shadow the specific one
+// Generic route handler second: won't shadow the specific one
 manager.registerHandler(
   RouteDeeplinkHandler(paths: ['/products/*', '/shop/*']),
 );

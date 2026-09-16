@@ -20,7 +20,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  magic: ^0.0.5
+  # `MagicApp.register` returns `Future<void>` from 0.0.8 and `void` below it,
+  # and this package's own suite awaits it: at `^0.0.5` the library still
+  # analyzes clean but the tests do not compile, so the floor was naming a
+  # version nothing here is verified against. 0.0.8 is the lowest that runs.
+  magic: ^0.0.8
   fluttersdk_artisan: ^0.0.8
   app_links: ^7.0.0
   args: ^2.7.0

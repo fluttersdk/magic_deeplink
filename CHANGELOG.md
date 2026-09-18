@@ -4,9 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-19
+
 ### Fixed
 
-- **The `magic` floor names a version this package's own suite can actually run against.** It said `^0.0.5`, and at that version the library still analyzes clean while the test suite does not compile: `MagicApp.register` returns `void` below magic 0.0.8 and `Future<void>` from 0.0.8 on, and the provider tests await it. So the floor was claiming support for three releases nothing here is verified against, which is the kind of claim that only ever fails in somebody else's build. It is `^0.0.8` now, the lowest version at which `flutter analyze` is clean on `lib/` AND `test/`. Nothing in `lib/` needed the move, so no consumer behaviour changes; what changes is that the floor is honest. (`pubspec.yaml`)
+- **The `magic` floor names a version this package's own suite can actually run against.** It said `^0.0.5`, and at that version the library still analyzes clean while the test suite does not compile: `MagicApp.register` returns `void` below magic 0.0.8 and `Future<void>` from 0.0.8 on, and the provider tests await it. So the floor was claiming support for three releases nothing here is verified against, which is the kind of claim that only ever fails in somebody else's build. It went to `^0.0.8` first, the lowest version at which `flutter analyze` is clean on `lib/` AND `test/`.
+
+  It ships as `^0.0.14`, which is a different decision on top of that one. The batch this release belongs to pins every sibling to its newest, so the floor now names magic's current release rather than the oldest verified one. That is worth stating plainly because 0.0.14 carries a BREAKING change: an unresolvable route middleware alias stops the app at `Magic.init` instead of leaving the route ungated. A consumer on magic 0.0.8 through 0.0.13 no longer resolves this package, and one moving to it inherits that check.
+
+  `fluttersdk_artisan` goes `^0.0.8` to `^0.0.16` for the same reason. Nothing in `lib/` needed either move, so no behaviour in this package changes. (`pubspec.yaml`)
 
 ## [0.1.0] - 2026-09-09
 

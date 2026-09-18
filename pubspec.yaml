@@ -1,6 +1,6 @@
 name: magic_deeplink
 description: Deep linking support for Magic Framework (Universal Links, App Links).
-version: 0.1.0
+version: 0.1.1
 homepage: https://magic.fluttersdk.com/deeplink
 documentation: https://magic.fluttersdk.com/packages/deeplink/getting-started/installation
 repository: https://github.com/fluttersdk/magic_deeplink
@@ -20,12 +20,19 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  # `MagicApp.register` returns `Future<void>` from 0.0.8 and `void` below it,
-  # and this package's own suite awaits it: at `^0.0.5` the library still
-  # analyzes clean but the tests do not compile, so the floor was naming a
-  # version nothing here is verified against. 0.0.8 is the lowest that runs.
-  magic: ^0.0.8
-  fluttersdk_artisan: ^0.0.8
+  # TWO reasons stacked, and they answer different questions.
+  #
+  # The floor cannot go below 0.0.8: `MagicApp.register` returns `void` there
+  # and `Future<void>` from 0.0.8 on, and this package's suite awaits it, so
+  # at `^0.0.5` the library analyzed clean while the tests did not compile.
+  #
+  # It sits at 0.0.14 because the release batch pins every sibling to its
+  # newest rather than to the oldest that runs. 0.0.14 is also where an
+  # unresolvable route middleware alias stops the app at `Magic.init` instead
+  # of leaving the route ungated, which is a breaking change a consumer of
+  # this package inherits.
+  magic: ^0.0.14
+  fluttersdk_artisan: ^0.0.16
   app_links: ^7.0.0
   args: ^2.7.0
 

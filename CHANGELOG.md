@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-09-22
+
+### Changed
+
+- **Every sibling floor names this batch's release.** `magic` moves `^0.0.15` to `^0.0.16`; `fluttersdk_artisan` stays at `^0.0.16`, still the newest. The old ranges already admitted the new versions, so a fresh `pub get` resolves nothing differently; what changes is that the floors name the releases this package is verified against. magic 0.0.16 widens `file_picker` to admit 13, where `PlatformFile.length()` answers null for an unreadable file; this package does not call `Pick`. (`pubspec.yaml`)
+
 ## [0.1.2] - 2026-09-21
 
 ### Changed

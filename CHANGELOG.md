@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **`RouteDeeplinkHandler` takes an optional `List<String>? hosts`.** Left `null` (the default), `canHandle` still matches an absolute URI on any host, unchanged. Set it, and a relative URI (a push payload path) is still always accepted, but an absolute URI is claimed only over `http`/`https`, with no explicit port and no userinfo, on a host that equals one entry of `hosts` case-insensitively; consumers had been re-implementing this same host check themselves because the handler previously matched a path on any host at all. A blank entry in `hosts` is ignored rather than treated as a wildcard, so `hosts: ['']` refuses every absolute URI (including one whose own host is empty) instead of matching it on the empty string.
+- **`RouteDeeplinkHandler` takes an optional `bool caseSensitive = false`.** go_router routes are case-sensitive by default, so a consumer that mounted `/incidents/:id` had no way to stop the handler from claiming `/INCIDENTS/5` and then landing on go_router's not-found page: the compiled patterns matched case-insensitively with no opt-out. Left at the default, matching is unchanged; set to `true`, only the exact case matches.
+
 ## [0.1.3] - 2026-09-22
 
 ### Changed

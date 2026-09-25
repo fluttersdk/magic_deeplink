@@ -15,8 +15,10 @@ class RouteDeeplinkHandler extends DeeplinkHandler {
   /// carries no scheme and no authority) is always accepted regardless.
   final List<String>? hosts;
 
-  /// Whether path matching (and, by extension, [hosts] matching) treats
-  /// letter case as significant.
+  /// Whether path matching treats letter case as significant.
+  ///
+  /// [hosts] are always compared case-insensitively, whatever this says:
+  /// host names are case-insensitive by spec.
   ///
   /// Defaults to `false`, which keeps the original behaviour: go_router
   /// routes are case-sensitive by default, so a consumer that mounted

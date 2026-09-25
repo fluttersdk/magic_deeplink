@@ -87,8 +87,32 @@ Matches incoming URI paths against a list of patterns and navigates to the match
 **Constructor:**
 
 ```dart
-RouteDeeplinkHandler({required List<String> paths})
+RouteDeeplinkHandler({
+  required List<String> paths,
+  List<String>? hosts,
+  bool caseSensitive = false,
+})
 ```
+
+`hosts` is optional and defaults to `null`, which keeps the original path-only behaviour: an absolute URI on any host matching one of `paths` is claimed. Set it to gate `canHandle` on the address as well:
+
+- A relative URI (no scheme, no authority, the shape a push payload path carries) is always accepted; there is no host to check.
+- An absolute URI is accepted only over `http` or `https`, with no explicit port and no userinfo, and only when its host equals one entry of `hosts` case-insensitively. Anything else (a different host, a non-http(s) scheme, a port, embedded credentials) is refused before the path is even matched.
+- A blank entry in `hosts` is ignored rather than treated as a wildcard. `hosts: ['']` refuses every absolute URI, including one whose own host is empty (`https:/incidents/5`); it does not fall back to matching any host.
+
+```dart
+final handler = RouteDeeplinkHandler(
+  paths: ['/monitors/:id'],
+  hosts: ['example.com'],
+);
+
+handler.canHandle(Uri.parse('/monitors/5')); // true, relative
+handler.canHandle(Uri.parse('https://EXAMPLE.com/monitors/5')); // true, case-insensitive
+handler.canHandle(Uri.parse('https://evil.com/monitors/5')); // false, wrong host
+handler.canHandle(Uri.parse('https://example.com:8443/monitors/5')); // false, explicit port
+```
+
+`caseSensitive` is optional and defaults to `false`, matching go_router's own default of case-sensitive routes only when a consumer opts in: `/incidents/5` and `/INCIDENTS/5` both match a `paths` entry of `/incidents/:id` unless `caseSensitive: true` is passed, in which case only the exact case matches and the mismatched one falls through to the next handler (or to go_router's not-found page if none claims it).
 
 **Pattern syntax:**
 
@@ -99,7 +123,7 @@ RouteDeeplinkHandler({required List<String> paths})
 | `/products/:id` | A single non-slash segment (named parameter) |
 | `/shop/*/detail` | Any path with a wildcard middle segment |
 
-Matching is case-insensitive and trailing slashes are normalized before comparison.
+Matching is case-insensitive by default (see `caseSensitive` above) and trailing slashes are normalized before comparison.
 
 **Example:**
 

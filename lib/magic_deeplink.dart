@@ -6,7 +6,11 @@ export 'src/deeplink_manager.dart';
 // Handlers
 export 'src/handlers/deeplink_handler.dart';
 export 'src/handlers/route_deeplink_handler.dart';
+export 'src/handlers/tenant_switch_gate.dart';
 export 'src/handlers/onesignal_deeplink_handler.dart';
+
+// Events
+export 'src/events/deeplink_events.dart';
 
 // Drivers
 export 'src/drivers/deeplink_driver.dart';

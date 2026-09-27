@@ -173,8 +173,8 @@ final handler = RouteDeeplinkHandler(
 | `payloadKey` | The push payload key naming the owning tenant. Defaults to `'team_id'`. |
 | `currentTenantId` | The session's current tenant id, or `null` while it has not resolved. |
 | `switchTenant` | Moves the session onto a tenant and answers whether it took. |
-| `onSwitched` | Optional. Runs after a successful switch, before the navigation. |
-| `onSwitchFailed` | Optional. Runs with the requested tenant id when `switchTenant` answered `false`. |
+| `onSwitched` | Optional. Runs after a successful switch, before the navigation. One that throws is logged and the link still opens, since the session has already moved. |
+| `onSwitchFailed` | Optional. Runs with the requested tenant id when `switchTenant` answered `false` or threw. |
 
 The rules are the handler's and no gate configuration changes them:
 
@@ -182,7 +182,7 @@ The rules are the handler's and no gate configuration changes them:
 - **The tenant comes from the payload under `payloadKey`, never from the URI query.** The query is part of the link.
 - **Ids compare as trimmed strings**, so a wire `5` and a local `'5'` are the same tenant.
 - **No evidence, no switch.** An absent or blank payload tenant, or a `null` current tenant, navigates directly.
-- **A failed switch does not navigate.** `switchTenant` answering `false` calls `onSwitchFailed`, logs an error and answers `false`; opening the page anyway would meet the same 404. A `switchTenant` that throws is logged and answered `false` without navigating.
+- **A failed switch does not navigate.** `switchTenant` answering `false` calls `onSwitchFailed`, logs an error and answers `false`; opening the page anyway would meet the same 404. A `switchTenant` that throws counts as a failed switch: it calls `onSwitchFailed`, is logged, and answers `false` without navigating. An `onSwitched` that throws is logged and the page still opens, because by then the session is already on the new tenant.
 
 <a name="breadcrumb-events"></a>
 ### Breadcrumb Events

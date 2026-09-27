@@ -18,8 +18,8 @@ import 'package:flutter/foundation.dart';
 ///   URI query, because the query is part of the link.
 /// - Ids compare as trimmed strings, so a wire `5` and a local `'5'` are the
 ///   same tenant.
-/// - A switch that answers false does not navigate: the backend would still
-///   resolve the page against the old tenant.
+/// - A switch that answers false, or throws, does not navigate: the backend
+///   would still resolve the page against the old tenant.
 @immutable
 class TenantSwitchGate {
   /// The push payload key naming the tenant that owns what the link opens.
@@ -34,11 +34,12 @@ class TenantSwitchGate {
   final Future<bool> Function(String tenantId) switchTenant;
 
   /// Runs after a successful switch and before the navigation, so the app can
-  /// tell the user their tenant changed under them.
+  /// tell the user their tenant changed under them. One that throws is logged
+  /// and the link still opens: the session has already moved.
   final void Function()? onSwitched;
 
-  /// Runs when [switchTenant] answered false, with the tenant it was asked
-  /// for. The link is not opened after this.
+  /// Runs when [switchTenant] answered false or threw, with the tenant it was
+  /// asked for. The link is not opened after this.
   final void Function(String tenantId)? onSwitchFailed;
 
   const TenantSwitchGate({

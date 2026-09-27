@@ -197,8 +197,8 @@ class RouteDeeplinkHandler extends DeeplinkHandler {
 
     // 3. A failed switch does not navigate: the backend still resolves the
     //    page against the old tenant, so going anyway lands on the same 404.
-    final bool switched = await gate.switchTenant(owner);
-    if (!switched) {
+    //    A switch that throws failed too, and reports the same way.
+    if (!await _switchTenant(gate, owner)) {
       gate.onSwitchFailed?.call(owner);
       _log(
         Log.error,
@@ -211,10 +211,28 @@ class RouteDeeplinkHandler extends DeeplinkHandler {
 
     // 4. Say so before moving: the switch is otherwise silent, and the user
     //    would read another tenant's screens believing they are on their own.
-    gate.onSwitched?.call();
+    //    The session has already moved by now, so a notice that throws must
+    //    not strand it there without the page it moved for.
+    try {
+      gate.onSwitched?.call();
+    } catch (error) {
+      _log(Log.warning, 'onSwitched failed after switching to $owner: $error');
+    }
     _navigate(uri);
 
     return true;
+  }
+
+  /// Asks [gate] to switch to [owner], answering false when the switch
+  /// refused or threw.
+  Future<bool> _switchTenant(TenantSwitchGate gate, String owner) async {
+    try {
+      return await gate.switchTenant(owner);
+    } catch (error) {
+      _log(Log.error, 'switching to tenant $owner threw: $error');
+
+      return false;
+    }
   }
 
   /// Hands the router the value [canHandle] validated, and no other.

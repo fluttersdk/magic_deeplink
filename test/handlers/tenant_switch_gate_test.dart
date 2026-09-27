@@ -154,6 +154,7 @@ void main() {
         TenantSwitchGate(
           currentTenantId: () => 'mine',
           switchTenant: (String tenantId) async => throw StateError('offline'),
+          onSwitchFailed: failedFor.add,
         ),
       );
 
@@ -166,7 +167,33 @@ void main() {
       );
 
       expect(handled, isFalse);
+      expect(failedFor, <String>['other']);
       expect(MagicRouter.instance.currentPath, '/');
+    });
+
+    testWidgets('an onSwitched that throws still opens the link', (
+      WidgetTester tester,
+    ) async {
+      await mountRouter(tester);
+
+      final RouteDeeplinkHandler handler = handlerWith(
+        TenantSwitchGate(
+          currentTenantId: () => 'mine',
+          switchTenant: (String tenantId) async => true,
+          onSwitched: () => throw StateError('no overlay'),
+        ),
+      );
+
+      final bool handled = await open(
+        tester,
+        handler,
+        '/incidents/1',
+        source: DeeplinkSource.push,
+        payload: <String, dynamic>{'team_id': 'other'},
+      );
+
+      expect(handled, isTrue);
+      expect(MagicRouter.instance.currentPath, '/incidents/1');
     });
 
     testWidgets('reads the tenant from a custom payload key', (

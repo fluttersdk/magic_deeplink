@@ -156,19 +156,15 @@ void main() {
       });
     });
 
-    test('handle attempts to navigate via MagicRoute', () async {
-      final uri = Uri.parse('https://example.com/some/path');
-      // Since MagicRouter is not initialized in this unit test environment,
-      // it throws a StateError. Catching this error confirms that MagicRoute.to()
-      // was indeed called by the handler.
-      expect(
-        () async => await handler.handle(uri, source: DeeplinkSource.osLink),
-        throwsA(isA<StateError>().having(
-          (e) => e.message,
-          'message',
-          contains('Router not initialized'),
-        )),
-      );
+    test('handle answers false rather than throwing when navigation fails',
+        () async {
+      // No router is initialised in this unit test, so MagicRoute.to() throws
+      // a StateError inside handle. The handler contract is to never throw
+      // (the manager awaits it from a stream subscription), so it reports the
+      // failure as false instead.
+      final uri = Uri.parse('https://example.com/settings');
+
+      expect(await handler.handle(uri, source: DeeplinkSource.osLink), isFalse);
     });
   });
 }

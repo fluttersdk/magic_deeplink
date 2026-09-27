@@ -26,12 +26,12 @@ dependencies:
   # and `Future<void>` from 0.0.8 on, and this package's suite awaits it, so
   # at `^0.0.5` the library analyzed clean while the tests did not compile.
   #
-  # It sits at 0.0.14 because the release batch pins every sibling to its
-  # newest rather than to the oldest that runs. 0.0.14 is also where an
+  # It sits at 0.0.22 because `DeeplinkOpened` and `DeeplinkNavigating`
+  # implement `ReportsBreadcrumb`, which 0.0.22 introduces. 0.0.14 is where an
   # unresolvable route middleware alias stops the app at `Magic.init` instead
   # of leaving the route ungated, which is a breaking change a consumer of
   # this package inherits.
-  magic: ^0.0.16
+  magic: ^0.0.22
   fluttersdk_artisan: ^0.0.16
   app_links: ^7.0.0
   args: ^2.7.0

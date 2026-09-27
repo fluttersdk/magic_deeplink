@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:magic/magic.dart';
 import 'package:magic_deeplink/src/handlers/deeplink_handler.dart';
+
+import '../events/deeplink_events.dart';
+import 'tenant_switch_gate.dart';
 
 class RouteDeeplinkHandler extends DeeplinkHandler {
   final List<String> paths;
@@ -26,12 +31,24 @@ class RouteDeeplinkHandler extends DeeplinkHandler {
   /// claimed and then landing on go_router's not-found page.
   final bool caseSensitive;
 
+  /// Switches the session's tenant before navigating, for a push whose payload
+  /// names another one.
+  ///
+  /// `null` (the default) never switches anything. See [TenantSwitchGate] for
+  /// the contract; the source and payload-key checks live in [handle] so no
+  /// gate configuration can loosen them.
+  final TenantSwitchGate? tenantGate;
+
   final List<RegExp> _patterns;
+
+  /// The container key magic binds its log manager under.
+  static const String _logBinding = 'log';
 
   RouteDeeplinkHandler({
     required this.paths,
     this.hosts,
     this.caseSensitive = false,
+    this.tenantGate,
   }) : _patterns = paths.map((p) => _compilePattern(p, caseSensitive)).toList();
 
   static RegExp _compilePattern(String pattern, bool caseSensitive) {
@@ -55,6 +72,14 @@ class RouteDeeplinkHandler extends DeeplinkHandler {
   bool canHandle(Uri uri) {
     if (!_addressesAllowedHost(uri)) return false;
 
+    return _matchedPattern(uri) != null;
+  }
+
+  /// The entry of [paths] whose pattern [uri]'s path matches, or null.
+  ///
+  /// What a breadcrumb reports instead of the path itself, since a concrete
+  /// path can carry a token (`/invitations/:token/accept`).
+  String? _matchedPattern(Uri uri) {
     String path = uri.path;
 
     // Normalize path: remove trailing slash unless it's just "/"
@@ -62,7 +87,11 @@ class RouteDeeplinkHandler extends DeeplinkHandler {
       path = path.substring(0, path.length - 1);
     }
 
-    return _patterns.any((p) => p.hasMatch(path));
+    for (int i = 0; i < _patterns.length; i++) {
+      if (_patterns[i].hasMatch(path)) return paths[i];
+    }
+
+    return null;
   }
 
   /// Whether [uri] is on a host this handler is allowed to claim.
@@ -90,18 +119,153 @@ class RouteDeeplinkHandler extends DeeplinkHandler {
         .any((h) => h.toLowerCase() == host);
   }
 
-  /// Navigates to the path [uri] names.
+  /// Opens the path [uri] names, and answers whether it was opened.
   ///
-  /// [source] and [payload] are deliberately unused: routing to a path the
-  /// consumer listed is safe whoever asked for it. A handler that acts on the
-  /// payload is the consumer's to write, and it is the one that reads [source].
+  /// Never throws, per the handler contract: the manager awaits this from a
+  /// stream subscription, so an escaping error (a router that is not built
+  /// yet answers with a StateError) is an unhandled async error that takes a
+  /// tapped notification with it. Every failure is logged and answered false.
+  ///
+  /// [source] and [payload] matter only to [tenantGate]: routing to a path the
+  /// consumer listed is safe whoever asked for it, moving the session's tenant
+  /// is not.
   @override
   Future<bool> handle(
     Uri uri, {
     required DeeplinkSource source,
     Map<String, dynamic>? payload,
   }) async {
-    MagicRoute.to(uri.path, query: uri.queryParameters);
+    // The manager asks [canHandle] first, so this refuses only a direct call.
+    // It still refuses rather than trusting its caller, because the guard is
+    // the thing this class is for.
+    if (!canHandle(uri)) {
+      _log(
+        Log.warning,
+        'a link from ${source.name} names no path this handler serves: '
+        '"${uri.path}"',
+      );
+
+      return false;
+    }
+
+    try {
+      return await _open(uri, source: source, payload: payload);
+    } catch (error) {
+      // Not rethrown: see the contract above. Logged, because nothing retries.
+      _log(Log.error, 'opening ${uri.path} failed: $error');
+
+      return false;
+    }
+  }
+
+  /// Navigates to [uri], switching tenant first when a push says the page
+  /// belongs to one the session is not on.
+  Future<bool> _open(
+    Uri uri, {
+    required DeeplinkSource source,
+    required Map<String, dynamic>? payload,
+  }) async {
+    final TenantSwitchGate? gate = tenantGate;
+
+    _announce(
+      DeeplinkOpened(
+        source: source,
+        route: _matchedPattern(uri) ?? '',
+        namesTenant: gate != null && gate.tenantNamedBy(payload).isNotEmpty,
+      ),
+    );
+
+    // 1. Only a push may name the owner, and only through its payload. An OS
+    //    link naming another tenant navigates anyway and meets the backend's
+    //    404, which beats a link nobody authored moving the session.
+    if (gate == null || source != DeeplinkSource.push) {
+      _navigate(uri);
+
+      return true;
+    }
+
+    // 2. An absent owner or an unresolved session is not evidence of a
+    //    mismatch: a server older than the payload key must not leave a
+    //    responder where they were.
+    final String owner = gate.tenantNamedBy(payload);
+    final String current = gate.currentTenantId()?.trim() ?? '';
+    if (owner.isEmpty || current.isEmpty || owner == current) {
+      _navigate(uri);
+
+      return true;
+    }
+
+    // 3. A failed switch does not navigate: the backend still resolves the
+    //    page against the old tenant, so going anyway lands on the same 404.
+    //    A switch that throws failed too, and reports the same way.
+    if (!await _switchTenant(gate, owner)) {
+      gate.onSwitchFailed?.call(owner);
+      _log(
+        Log.error,
+        'could not switch to tenant $owner; staying put rather than opening '
+        '${uri.path} on a 404',
+      );
+
+      return false;
+    }
+
+    // 4. Say so before moving: the switch is otherwise silent, and the user
+    //    would read another tenant's screens believing they are on their own.
+    //    The session has already moved by now, so a notice that throws must
+    //    not strand it there without the page it moved for.
+    try {
+      gate.onSwitched?.call();
+    } catch (error) {
+      _log(Log.warning, 'onSwitched failed after switching to $owner: $error');
+    }
+    _navigate(uri);
+
     return true;
+  }
+
+  /// Asks [gate] to switch to [owner], answering false when the switch
+  /// refused or threw.
+  Future<bool> _switchTenant(TenantSwitchGate gate, String owner) async {
+    try {
+      return await gate.switchTenant(owner);
+    } catch (error) {
+      _log(Log.error, 'switching to tenant $owner threw: $error');
+
+      return false;
+    }
+  }
+
+  /// Hands the router the value [canHandle] validated, and no other.
+  ///
+  /// The parsed path rather than the string it came from: [Uri] resolves dot
+  /// segments while parsing, and validating one value while navigating another
+  /// is the shape every bypass of the path guard would take.
+  void _navigate(Uri uri) {
+    _announce(DeeplinkNavigating(route: _matchedPattern(uri) ?? ''));
+
+    MagicRoute.to(uri.path, query: uri.queryParameters);
+  }
+
+  /// Dispatches [event] without waiting on its listeners.
+  ///
+  /// A breadcrumb may cost the navigation nothing: a listener that fails, or a
+  /// dispatcher that cannot run, is logged and the link still opens.
+  void _announce(MagicEvent event) {
+    unawaited(
+      Event.dispatch(event).catchError((Object error) {
+        _log(Log.warning, 'dispatching ${event.runtimeType} failed: $error');
+      }),
+    );
+  }
+
+  /// Writes [message] through [write] when the host has a log to write to.
+  ///
+  /// [Log] throws when nothing bound `log`, and an app without a logging
+  /// provider is a legitimate build; asking first keeps a diagnostic from
+  /// becoming a second failure inside a handler that must not throw.
+  void _log(void Function(String message) write, String message) {
+    if (!Magic.bound(_logBinding)) return;
+
+    write('[RouteDeeplinkHandler] $message');
   }
 }

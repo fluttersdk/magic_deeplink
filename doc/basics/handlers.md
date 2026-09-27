@@ -7,6 +7,8 @@
     - [DeeplinkSource](#deeplinksource)
 - [Built-in Handlers](#built-in-handlers)
     - [RouteDeeplinkHandler](#routedeeplinkhandler)
+    - [Switching Tenants from a Push](#switching-tenants-from-a-push)
+    - [Breadcrumb Events](#breadcrumb-events)
     - [OneSignalDeeplinkHandler](#onesignaldeeplinkhandler)
 - [Creating Custom Handlers](#creating-custom-handlers)
 - [Registering Handlers](#registering-handlers)
@@ -74,7 +76,7 @@ Where the instruction to open `uri` came from, and the two paths are not equally
 | `push` | The user tapped a push notification, and the payload is the server's own. | The full push payload the notification arrived with. |
 | `manual` | The application asked for the link itself, in code or in a test. | Whatever the caller passed, or `null`. |
 
-`source` is a required, non-defaulted parameter precisely so a handler cannot forget to ask: a handler that reads `payload` to act on more than the path it was given (switching the user's active team off a `team_id` key, say) may only do that when `source == DeeplinkSource.push`, because that is the one case where the payload was authored by the server rather than crafted into a URI. `RouteDeeplinkHandler` ignores both parameters entirely: navigating to a path the consumer listed is safe regardless of who asked for it.
+`source` is a required, non-defaulted parameter precisely so a handler cannot forget to ask: a handler that reads `payload` to act on more than the path it was given (switching the user's active team off a `team_id` key, say) may only do that when `source == DeeplinkSource.push`, because that is the one case where the payload was authored by the server rather than crafted into a URI. `RouteDeeplinkHandler` reads them only when it was given a [`tenantGate`](#switching-tenants-from-a-push): navigating to a path the consumer listed is safe regardless of who asked for it, moving the session's tenant is not.
 
 <a name="built-in-handlers"></a>
 ## Built-in Handlers
@@ -91,6 +93,7 @@ RouteDeeplinkHandler({
   required List<String> paths,
   List<String>? hosts,
   bool caseSensitive = false,
+  TenantSwitchGate? tenantGate,
 })
 ```
 
@@ -143,7 +146,63 @@ When a matching URI arrives, the handler calls:
 MagicRoute.to(uri.path, query: uri.queryParameters);
 ```
 
-Query parameters are forwarded automatically, so `https://example.com/products/42?ref=email` navigates to `/products/42` with `{'ref': 'email'}` available via `Request.query('ref')`.
+Query parameters are forwarded automatically, so `https://example.com/products/42?ref=email` navigates to `/products/42` with `{'ref': 'email'}` available via `Request.query('ref')`. The path navigated is the PARSED `uri.path`, the same value `canHandle` matched, because `Uri` resolves dot segments while parsing.
+
+`handle` never throws. It re-checks `canHandle` and answers `false` for a path it does not serve, and a navigation that fails (a router that is not built yet answers with a `StateError`) is logged through magic's `Log`, when a `log` binding exists, and answered `false`.
+
+<a name="switching-tenants-from-a-push"></a>
+### Switching Tenants from a Push
+
+A multi-tenant backend resolves a page against the session's current tenant and answers 404 for another tenant's row. A push paging a user about another team's incident would land on that 404, so `RouteDeeplinkHandler` can switch first when it is given a `TenantSwitchGate`:
+
+```dart
+final handler = RouteDeeplinkHandler(
+  paths: ['/incidents/:id'],
+  tenantGate: TenantSwitchGate(
+    // Your app's own team state; any `String?` and any `Future<bool>` will do.
+    currentTenantId: () => TeamController.instance.currentTeamId?.toString(),
+    switchTenant: (String teamId) => TeamController.instance.switchTeam(teamId),
+    onSwitched: () => Magic.success('Switched team', 'Opened on the team it belongs to.'),
+    onSwitchFailed: (String teamId) => Magic.error('Error', 'Could not switch team.'),
+  ),
+);
+```
+
+| Field | Meaning |
+|-------|---------|
+| `payloadKey` | The push payload key naming the owning tenant. Defaults to `'team_id'`. |
+| `currentTenantId` | The session's current tenant id, or `null` while it has not resolved. |
+| `switchTenant` | Moves the session onto a tenant and answers whether it took. |
+| `onSwitched` | Optional. Runs after a successful switch, before the navigation. One that throws is logged and the link still opens, since the session has already moved. |
+| `onSwitchFailed` | Optional. Runs with the requested tenant id when `switchTenant` answered `false` or threw. |
+
+The rules are the handler's and no gate configuration changes them:
+
+- **Only `DeeplinkSource.push` switches.** An `osLink` or a `manual` link navigates without switching, whatever its payload or query carries: an OS link is attacker-craftable, and a switch moves the session's scoping (and often its billing) subject.
+- **The tenant comes from the payload under `payloadKey`, never from the URI query.** The query is part of the link.
+- **Ids compare as trimmed strings**, so a wire `5` and a local `'5'` are the same tenant.
+- **No evidence, no switch.** An absent or blank payload tenant, or a `null` current tenant, navigates directly.
+- **A failed switch does not navigate.** `switchTenant` answering `false` calls `onSwitchFailed`, logs an error and answers `false`; opening the page anyway would meet the same 404. A `switchTenant` that throws counts as a failed switch: it calls `onSwitchFailed`, is logged, and answers `false` without navigating. An `onSwitched` that throws is logged and the page still opens, because by then the session is already on the new tenant.
+
+<a name="breadcrumb-events"></a>
+### Breadcrumb Events
+
+`RouteDeeplinkHandler` dispatches two magic events through `Event.dispatch`, unawaited, so a failing listener never costs the navigation:
+
+| Event | When | `breadcrumbCategory` | `breadcrumbData` |
+|-------|------|----------------------|------------------|
+| `DeeplinkOpened` | After `canHandle` passed, before any switch or navigation | `deeplink.open` | `source`, `route`, `names_tenant` |
+| `DeeplinkNavigating` | Immediately before `MagicRoute.to` | `deeplink.navigate` | `route` |
+
+Both implement magic's `ReportsBreadcrumb`, so a crash reporter that watches every event with `Event.listenAny` (as `magic_sentry` does) records them without this package depending on it. Dispatching `DeeplinkNavigating` right before the navigation makes it the last breadcrumb on an exception thrown while the destination builds, which tells "the link never resolved" apart from "the page it named threw". `route` is the handler's own pattern that matched (`/invitations/:token/accept`), not the concrete path, and the data never carries the query string or a payload value, since a link can carry an invite or reset token in any of them.
+
+```dart
+Event.listenAny((MagicEvent event) {
+  if (event is DeeplinkNavigating) {
+    debugPrint('opening a link matching ${event.route}');
+  }
+});
+```
 
 <a name="onesignaldeeplinkhandler"></a>
 ### OneSignalDeeplinkHandler

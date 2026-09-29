@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-09-29
+
+### Changed
+- **Every sibling floor names this batch's release.** `magic` moves `^0.0.22` to `^0.0.24` and `fluttersdk_artisan` `^0.0.16` to `^0.0.17`. The old ranges already admitted the new versions, so a fresh `pub get` resolves nothing differently; what changes is that the floors name the releases this package is verified against. magic 0.0.24 removes `MagicController.onRefreshUI` (BREAKING); this package calls it nowhere in `lib/` or `test/`, so nothing here moves with it. (`pubspec.yaml`)
+
 ## [0.1.4] - 2026-09-27
 
 ### Added

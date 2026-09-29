@@ -62,7 +62,7 @@ Setting up deep links in Flutter means dealing with platform-specific manifests,
 
 ```yaml
 dependencies:
-  magic_deeplink: ^0.1.4
+  magic_deeplink: ^0.1.5
 ```
 
 ### 2. Install configuration

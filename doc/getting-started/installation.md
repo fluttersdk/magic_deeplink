@@ -40,7 +40,7 @@ Or add it manually to `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  magic_deeplink: ^0.1.4
+  magic_deeplink: ^0.1.5
 ```
 
 Then fetch dependencies:

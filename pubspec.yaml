@@ -1,6 +1,6 @@
 name: magic_deeplink
 description: Deep linking support for Magic Framework (Universal Links, App Links).
-version: 0.1.5
+version: 0.1.6
 homepage: https://magic.fluttersdk.com/deeplink
 documentation: https://magic.fluttersdk.com/packages/deeplink/getting-started/installation
 repository: https://github.com/fluttersdk/magic_deeplink
@@ -30,10 +30,10 @@ dependencies:
   # implement `ReportsBreadcrumb`, which 0.0.22 introduces. 0.0.14 is where an
   # unresolvable route middleware alias stops the app at `Magic.init` instead
   # of leaving the route ungated, which is a breaking change a consumer of
-  # this package inherits. The floor names 0.0.24, the newest release when
-  # the 2026-09-29 batch re-pinned every sibling.
-  magic: ^0.0.24
-  fluttersdk_artisan: ^0.0.17
+  # this package inherits. The floor names 0.0.27, the newest release when
+  # the 2026-10-09 batch re-pinned every sibling.
+  magic: ^0.0.27
+  fluttersdk_artisan: ^0.0.19
   app_links: ^7.0.0
   args: ^2.7.0
 

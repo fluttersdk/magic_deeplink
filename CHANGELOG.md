@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-09
+
+### Changed
+- **Every sibling floor names this batch's release.** `magic` moves `^0.0.24` to `^0.0.27` and `fluttersdk_artisan` `^0.0.17` to `^0.0.19`. The old ranges already admitted the new versions, so a fresh `pub get` resolves nothing differently; what changes is that the floors name the releases this package is verified against. None of magic 0.0.25 to 0.0.27 or artisan 0.0.18 and 0.0.19 is breaking; artisan 0.0.19 widens its `xml` constraint to admit 7.x, which a consumer now inherits. (`pubspec.yaml`)
+
 ## [0.1.5] - 2026-09-29
 
 ### Changed

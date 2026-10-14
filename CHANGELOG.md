@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-14
+
+### Changed
+- **Every sibling floor names this batch's release.** `magic` moves `^0.0.28` to `^0.0.29`; `fluttersdk_artisan` stays at `^0.0.20`. The old range already admitted 0.0.29, so a fresh `pub get` resolves nothing differently; what changes is that the floor names the release this package is verified against. magic 0.0.29 adds two abstract members to `BroadcastChannel` (`isSubscribed`, `onSubscriptionChanged`) and a `webOnlyWindowName` parameter to `LaunchAdapter.launch()`, and pulls wind 1.9.0, where `tracking-*` is em; this package implements neither contract and writes no `tracking-*` class, so none of it reaches it. (`pubspec.yaml`)
+
 ## [0.1.7] - 2026-10-13
 
 ### Changed
